@@ -6,8 +6,8 @@
 //  pour faire transiter des octets, on expose la memoire directement.
 //
 //  Generique :
-//     mem Save "C:/NumWorks/sram.bin" 0x20000000 0x40000
-//     mem Load "C:/NumWorks/sram.bin" 0x20000000
+//     mem Save "C:/EmuWorks/sram.bin" 0x20000000 0x40000
+//     mem Load "C:/EmuWorks/sram.bin" 0x20000000
 //
 //  Raccourcis (zones du N0110) :
 //     mem SaveSram "..."      / mem LoadSram "..."      SRAM 256 Ko  @0x20000000
@@ -15,11 +15,15 @@
 //     mem SaveInternal "..."  / mem LoadInternal "..."  flash 64 Ko  @0x08000000
 //
 //  Sauvegarde automatique (pour que fermer la fenetre ne perde rien) :
-//     mem AutoSave "C:/NumWorks/rom/sram.bin" 5     toutes les 5 s
+//     mem AutoSave "C:/EmuWorks/rom/sram.bin" 5     toutes les 5 s
 //     mem AutoSave "" 0                             desactive
 //
 //  Appel d'un outil externe (le moniteur Renode n'a pas d'echappement shell) :
-//     mem Shell "node" "C:/NumWorks/renode/tools/rom.js push C:/NumWorks/rom"
+//     mem Shell "node" "C:/EmuWorks/renode/tools/rom.js push C:/EmuWorks/rom"
+//
+//  Les chemins relatifs sont resolus depuis EMUWORKS_BASE (la racine du
+//  projet), pose par l'appelant : Renode ne conserve pas son repertoire de
+//  lancement.
 //
 //  Les scripts Python d'Epsilon vivent dans staticStorageArea (32 Ko) en SRAM :
 //  c'est donc SaveSram / LoadSram qui les capture, pas la flash externe.
@@ -58,6 +62,27 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         {
         }
 
+
+        // ---- resolution des chemins --------------------------------------
+        //  Renode ne garde PAS le repertoire depuis lequel on l'a lance : un
+        //  chemin relatif donne ici atterrirait n'importe ou. L'appelant
+        //  (EmuWorks.exe ou les .bat) pose donc EMUWORKS_BASE, et tout ce qui
+        //  est relatif se resout par rapport a la racine du projet. C'est ce
+        //  qui permet d'installer le dossier ou l'on veut.
+        private static string Resoudre(string chemin)
+        {
+            if(string.IsNullOrEmpty(chemin) || Path.IsPathRooted(chemin))
+            {
+                return chemin;
+            }
+            string racine = Environment.GetEnvironmentVariable("EMUWORKS_BASE");
+            if(string.IsNullOrEmpty(racine))
+            {
+                return chemin;
+            }
+            return Path.GetFullPath(Path.Combine(racine, chemin));
+        }
+
         // ---- generique --------------------------------------------------
         public void Save(string path, long address, long count)
         {
@@ -72,6 +97,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         {
             try
             {
+                path = Resoudre(path);
                 if(!File.Exists(path))
                 {
                     this.Log(LogLevel.Warning, "Fichier introuvable : {0}", path);
@@ -110,6 +136,11 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 info.RedirectStandardOutput = true;
                 info.RedirectStandardError = true;
                 info.CreateNoWindow = true;
+                string racine = Environment.GetEnvironmentVariable("EMUWORKS_BASE");
+                if(!string.IsNullOrEmpty(racine))
+                {
+                    info.WorkingDirectory = racine;
+                }
                 var process = System.Diagnostics.Process.Start(info);
                 string output = process.StandardOutput.ReadToEnd();
                 string errors = process.StandardError.ReadToEnd();
@@ -165,6 +196,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         {
             try
             {
+                path = Resoudre(path);
                 byte[] data = machine.GetSystemBus(this).ReadBytes((ulong)address, (int)count, false, null);
                 File.WriteAllBytes(path, data);
                 return true;

@@ -45,6 +45,6 @@ for (const s of out.slice(0, 20)) {
 }
 console.log("\nPour vider cette zone depuis le moniteur Renode :");
 const t = out[0];
-console.log('  mem Save "C:/NumWorks/zone.bin" 0x' + t.val.toString(16) +
+console.log('  mem Save "C:/EmuWorks/zone.bin" 0x' + t.val.toString(16) +
             " 0x" + t.size.toString(16));
-console.log('  mem Load "C:/NumWorks/zone.bin" 0x' + t.val.toString(16));
+console.log('  mem Load "C:/EmuWorks/zone.bin" 0x' + t.val.toString(16));

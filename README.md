@@ -1,6 +1,6 @@
-# Émulateur NumWorks N0110
+# EmuWorks
 
-Un émulateur **au niveau du microcontrôleur** : il exécute le vrai code machine
+**Émulateur de calculatrice NumWorks N0110.** Un émulateur **au niveau du microcontrôleur** : il exécute le vrai code machine
 ARM Cortex-M7 du firmware NumWorks sur un STM32F730 émulé, avec l'écran
 ST7789V sur bus FMC, la matrice clavier 9×6, l'ADC de la batterie et l'unité
 CRC32. Pas une réimplémentation de l'interface — le firmware d'origine, tel
@@ -37,9 +37,11 @@ STM32F730, protocole de la dalle, câblage du clavier), pas le firmware.
 | [Node.js](https://nodejs.org) | `winget install OpenJS.NodeJS.LTS` — sert à la synchronisation des scripts |
 | .NET Desktop Runtime 8 | pour l'application ; ou `dotnet publish` depuis `app/` |
 
-> ⚠️ **Le dossier doit être installé sous un chemin sans espaces**, typiquement
-> `C:\NumWorks\`. Renode 1.16 échoue silencieusement (« Could not tokenize »)
-> sur un chemin qui en contient — c'est le premier piège du projet.
+> ⚠️ **Installe le dossier sous un chemin sans espaces**, par exemple
+> `C:\EmuWorks\`. Renode 1.16 échoue silencieusement (« Could not tokenize »)
+> sur un chemin qui en contient — c'est le premier piège du projet. L'endroit
+> exact est libre : rien n'est codé en dur, l'application transmet la racine du
+> projet à Renode par la variable `EMUWORKS_BASE`.
 
 ## Obtenir un firmware
 
@@ -68,7 +70,7 @@ fork et ta branche pour compiler tes propres modifications.
 
 ## Utilisation
 
-Lance `NumWorks.exe`. Une seule fenêtre :
+Lance `EmuWorks.exe`. Une seule fenêtre :
 
 - choix du firmware parmi ceux posés dans `firmwares/` ;
 - gestion des scripts Python : ajouter, supprimer, ouvrir dans ton éditeur ;
@@ -97,7 +99,7 @@ suit sans rien reconfigurer.
 ## Comment ça marche
 
 ```
-NumWorks.exe ──stdin──▶ Renode (sans interface)
+EmuWorks.exe ──stdin──▶ Renode (sans interface)
      ▲                      │
      │                      ├── numworks_n0110.repl   la carte
      └──socket 3555─────────┤   NumWorksDisplay.cs    ST7789V sur bus FMC

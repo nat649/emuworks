@@ -17,5 +17,5 @@ start
 echo ""
 echo "Calculatrice demarree. Ferme la fenetre pour enregistrer."
 echo "  Touches   : keyboard TapKey \"SEVEN\"   (ou le menu Keyboard: de la fenetre)"
-echo "  Capture   : lcd Dump \"C:/NumWorks/ecran.raw\"  puis  node tools/png.js ..."
+echo "  Capture   : lcd Dump \"ecran.raw\"  puis  node tools/png.js ..."
 echo "  Batterie  : adc SetMillivolts 3650"

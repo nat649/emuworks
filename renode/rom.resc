@@ -1,5 +1,5 @@
 : ============================================================================
-:  Le dossier C:\NumWorks\rom\ EST la calculatrice.
+:  Le dossier C:\EmuWorks\rom\ EST la calculatrice.
 : ============================================================================
 :    rom\internal.bin   -> flash interne  0x08000000
 :    rom\external.bin   -> flash externe  0x90000000
@@ -33,8 +33,8 @@ cpu VectorTableOffset 0x08000000
 :   vide la SRAM, puis  rom.bat pull  la transforme en fichiers .py
 macro tirer
 """
-    mem SaveSram "C:/NumWorks/rom/sram.bin"
-    echo "SRAM videe. Lance maintenant :  C:\NumWorks\rom.bat pull"
+    mem SaveSram "rom/sram.bin"
+    echo "SRAM videe. Lance maintenant :  C:\EmuWorks\rom.bat pull"
 """
 
 : --- le dossier vers la calculatrice ---

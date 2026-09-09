@@ -30,10 +30,10 @@ copy /y "%FW%\%~1\internal.bin" "%BASE%rom\internal.bin" >nul
 copy /y "%FW%\%~1\external.bin" "%BASE%rom\external.bin" >nul
 
 rem  L'adresse du stockage change d'un firmware a l'autre : on jette l'image de
-rem  reference, NumWorks.bat la reconstruira au prochain demarrage.
+rem  reference, EmuWorks.bat la reconstruira au prochain demarrage.
 if exist "%BASE%rom\sram.bin"       del "%BASE%rom\sram.bin"
 if exist "%BASE%rom\.storage.bin"   del "%BASE%rom\.storage.bin"
 if exist "%BASE%rom\.storage.json"  del "%BASE%rom\.storage.json"
 if exist "%BASE%rom\load.resc"      del "%BASE%rom\load.resc"
 
-echo %~1 installe. Lance NumWorks.bat.
+echo %~1 installe. Lance EmuWorks.bat.

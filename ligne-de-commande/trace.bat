@@ -1,6 +1,7 @@
 @echo off
+set "EMUWORKS_BASE=%~dp0..\"
 rem ===========================================================================
-rem  Test de non-regression du boot -> C:\NumWorks\trace.txt
+rem  Test de non-regression du boot -> trace.txt
 rem  A relancer apres CHAQUE modification du .repl ou des .cs
 rem ===========================================================================
 

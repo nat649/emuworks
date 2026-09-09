@@ -1,4 +1,4 @@
-# Émulateur NumWorks — commencer ici
+# EmuWorks — commencer ici
 
 Émulateur **au niveau de la puce** : il exécute le vrai code machine ARM du
 firmware NumWorks sur un STM32F730 émulé. Écran, clavier, scripts Python,
@@ -7,7 +7,7 @@ batterie — tout marche.
 ## Démarrer
 
 ```
-C:\NumWorks\NumWorks.exe
+C:\EmuWorks\EmuWorks.exe
 ```
 
 Une seule application, rien à taper. Elle réunit ce qui était éparpillé dans huit
@@ -21,15 +21,16 @@ fichiers `.bat` et dans des commandes tapées à la main :
 Aucune fenêtre Renode n'apparaît : il tourne sans interface, son écran est
 rapatrié ici par une socket locale.
 
-⚠️ **Tout doit rester sous `C:\NumWorks\`.** Renode 1.16 ne sait pas lire un
-chemin contenant des espaces (« Could not tokenize »). La copie posée sur le
-Bureau est une **archive**, pas un dossier d'exécution.
+⚠️ **Le chemin ne doit contenir aucun espace.** Renode 1.16 ne sait pas les lire
+(« Could not tokenize »). L'emplacement exact est libre : rien n'est codé en
+dur. La copie posée sur le Bureau est une **archive**, pas un dossier
+d'exécution — son chemin contient des espaces.
 
 ## Structure
 
 ```
-C:\NumWorks\
-├── NumWorks.exe      <- l'application
+C:\EmuWorks\
+├── EmuWorks.exe      <- l'application
 ├── README.md         <- la page d'accueil du dépôt GitHub
 ├── LICENSE           <- MIT (ton code) ; Epsilon n'est PAS distribué
 ├── .gitignore        <- tient les firmwares hors du dépôt

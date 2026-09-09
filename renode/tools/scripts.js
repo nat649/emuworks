@@ -6,8 +6,8 @@
 //   node scripts.js del   <storage.bin> <nom.py>
 //
 // Le vidage s'obtient depuis le moniteur Renode (adresse via find-symbol.js) :
-//   mem Save "C:/NumWorks/storage.bin" 0x20000cf8 0x8014
-//   mem Load "C:/NumWorks/storage.bin" 0x20000cf8
+//   mem Save "C:/EmuWorks/storage.bin" 0x20000cf8 0x8014
+//   mem Load "C:/EmuWorks/storage.bin" 0x20000cf8
 //
 // Format Epsilon : Magic | [taille uint16 | nom\0 | corps]... | 0x0000 | Magic
 // Le 1er octet du corps d'un script est le drapeau d'importation automatique.

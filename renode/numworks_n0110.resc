@@ -2,7 +2,7 @@
 :  NumWorks N0110 - emulateur puce (Renode)
 :  Firmware embarque : Omega 2.0.2 (fork communautaire basé sur Epsilon 15.5.0)
 : ============================================================================
-:  Lancer via  C:\NumWorks\run.bat  (il se place dans ce dossier, sinon les
+:  Lancer via  C:\EmuWorks\run.bat  (il se place dans ce dossier, sinon les
 :  chemins relatifs ci-dessous ne resolvent pas).
 :  Puis :  start
 : ============================================================================
@@ -41,16 +41,16 @@ machine StartGdbServer 3333
 macro sauver
 """
     pause
-    mem SaveFlash "C:/NumWorks/flash.bin"
-    mem SaveSram "C:/NumWorks/sram.bin"
+    mem SaveFlash "flash.bin"
+    mem SaveSram "sram.bin"
     start
     echo "Sauvegarde faite. run.bat la rechargera automatiquement."
 """
 
 macro restaurer
 """
-    mem LoadFlash "C:/NumWorks/flash.bin"
-    mem LoadSram "C:/NumWorks/sram.bin"
+    mem LoadFlash "flash.bin"
+    mem LoadSram "sram.bin"
 """
 
 echo ""

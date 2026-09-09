@@ -32,6 +32,7 @@ rom/.scripts-precedents/
 # --- artefacts de compilation ----------------------------------------------
 app/bin/
 app/obj/
+EmuWorks.exe
 NumWorks.exe
 
 # --- traces, captures, sorties de debogage ---------------------------------

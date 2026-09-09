@@ -1,4 +1,6 @@
-# Émulateur puce NumWorks N0110 (Renode)
+# EmuWorks — documentation technique
+
+Émulateur puce de la NumWorks N0110, sur Renode.
 
 Émulateur **au niveau du microcontrôleur** : il exécute réellement le code machine
 ARM Cortex-M7 du firmware NumWorks sur un STM32F730 émulé. Écran et clavier
@@ -12,14 +14,14 @@ sa couche applicative est propre à Omega (barre « OMEGA », app RPN, apps en p
 Pour faire tourner Epsilon officiel, compile-le avec `build-firmware-n0110.yml`.
 
 ⚠️ **Ne déplace pas ce dossier vers un chemin contenant des espaces.**
-Renode 1.16 ne sait pas les lire (« Could not tokenize »). D'où `C:\NumWorks\`.
+Renode 1.16 ne sait pas les lire (« Could not tokenize »). D'où `C:\EmuWorks\`.
 
 ---
 
 ## Lancer
 
 ```
-C:\NumWorks\NumWorks.exe
+C:\EmuWorks\EmuWorks.exe
 ```
 
 Une seule application. Elle reunit ce qui etait eparpille dans huit fichiers
@@ -64,7 +66,7 @@ relevee a chaque demarrage, elle differe pourtant d'un firmware a l'autre.
 
 ### Ligne de commande
 
-Les anciens scripts restent disponibles dans `ligne-de-commande\` : `NumWorks.bat`
+Les anciens scripts restent disponibles dans `ligne-de-commande\` : `EmuWorks.bat`
 (meme enchainement que l'application), `firmware.bat`, `rom.bat pull|push`,
 `run.bat`, `run-epsilon.bat`, `run-rom.bat`, plus `trace.bat` et `compare.bat`
 qui produisent les traces de non-regression.
@@ -73,7 +75,7 @@ qui produisent les traces de non-regression.
 
 
 ```bat
-C:\NumWorks\run.bat
+C:\EmuWorks\run.bat
 ```
 
 Puis, dans le moniteur Renode : `start`
@@ -92,7 +94,7 @@ Dans le moniteur :
 runMacro $sauver
 ```
 
-Écrit `C:/NumWorks/flash.bin` (flash externe) **et** `sram.bin` (SRAM — donc les
+Écrit `C:/EmuWorks/flash.bin` (flash externe) **et** `sram.bin` (SRAM — donc les
 scripts Python et tout le stockage utilisateur). Le prochain `run.bat` recharge les deux.
 
 
@@ -106,8 +108,8 @@ L'émulateur expose la mémoire directement en fichiers — plus simple et plus
 puissant qu'émuler un contrôleur USB pour faire transiter des octets.
 
 ```
-mem Save "C:/NumWorks/zone.bin" 0x20000000 0x40000     vider une zone
-mem Load "C:/NumWorks/zone.bin" 0x20000000             la réinjecter
+mem Save "C:/EmuWorks/zone.bin" 0x20000000 0x40000     vider une zone
+mem Load "C:/EmuWorks/zone.bin" 0x20000000             la réinjecter
 ```
 
 Raccourcis pour les zones du N0110 :
@@ -118,6 +120,7 @@ Raccourcis pour les zones du N0110 :
 | `mem SaveFlash` / `LoadFlash` | flash externe QSPI 8 Mo @ `0x90000000` |
 | `mem SaveInternal` / `LoadInternal` | flash interne 64 Ko @ `0x08000000` |
 | `mem AutoSave "<fichier>" <secondes>` | vide la SRAM periodiquement (0 pour arreter) |
+| `mem Save` / `Load` / `AutoSave` / `Shell` (chemins) | un chemin relatif est resolu depuis `EMUWORKS_BASE`, la racine du projet. **Renode ne conserve pas son repertoire de lancement** : sans cette variable un chemin relatif atterrit n'importe ou. L'application et les `.bat` la posent. |
 | `mem Shell "<programme>" "<arguments>"` | lance un outil externe : le moniteur Renode n'a pas d'echappement shell, sans ca le lanceur ne pourrait pas appeler `node` |
 
 ### Scripts Python
@@ -125,8 +128,8 @@ Raccourcis pour les zones du N0110 :
 Ils vivent dans `Ion::staticStorageArea`, en SRAM. Pour Epsilon 15.5.0 officiel :
 
 ```
-mem Save "C:/NumWorks/scripts.bin" 0x20000cf8 0x8014
-mem Load "C:/NumWorks/scripts.bin" 0x20000cf8
+mem Save "C:/EmuWorks/scripts.bin" 0x20000cf8 0x8014
+mem Load "C:/EmuWorks/scripts.bin" 0x20000cf8
 ```
 
 L'adresse change d'un firmware à l'autre. Pour la retrouver sur n'importe
@@ -158,11 +161,11 @@ le premier octet du corps étant le drapeau d’importation automatique.
 
 ## Le dossier `rom` comme calculatrice
 
-`C:/NumWorks/rom/` contient le firmware **et** les scripts Python en vrais
+`C:/EmuWorks/rom/` contient le firmware **et** les scripts Python en vrais
 fichiers `.py`. On le manipule avec l'explorateur ou son éditeur habituel.
 
 ```bat
-C:/NumWorks/run-rom.bat        lance l'émulateur sur ce dossier
+C:/EmuWorks/run-rom.bat        lance l'émulateur sur ce dossier
 ```
 
 | Sens | Dans Renode | Dans un terminal |
@@ -306,7 +309,7 @@ Noms : `ZERO`..`NINE` (ou `"7"`), `EXE`/`ENTER`, `BACKSPACE`/`DELETE`, `SHIFT`, 
 | `epsilon_officiel.resc` | lancement avec Epsilon 15.5.0 officiel |
 | `boottest-epsilon.resc` | non-régression avec Epsilon officiel |
 | `build-firmware-n0110.yml` | workflow GitHub pour compiler ton propre firmware (deux variantes) |
-| `../NumWorks.exe` | **l'application** : firmware, scripts, demarrage, enregistrement |
+| `../EmuWorks.exe` | **l'application** : firmware, scripts, demarrage, enregistrement |
 | `../app/` | sources C# de l'application (`dotnet publish` pour la reconstruire) |
 
 ---
@@ -405,10 +408,10 @@ modélisé), numéro de série à zéro.
 C'est la procédure qui a permis de faire marcher celui-ci.
 
 ```bat
-C:\NumWorks\trace.bat
+C:\EmuWorks\trace.bat
 ```
 
-écrit `C:\NumWorks\trace.txt`. Cherche une **adresse lue des milliers de fois avec le
+écrit `C:\EmuWorks\trace.txt`. Cherche une **adresse lue des milliers de fois avec le
 même PC** : c'est une attente de bit « ready » sur un registre non modélisé.
 
 ```
@@ -453,18 +456,18 @@ de la dalle, donc `Bitmap` le prend sans conversion (`Format16bppRgb565`).
 Capture d ecran (verification visuelle sans interface graphique) :
 
 ```
-lcd Dump "C:/NumWorks/ecran.raw"
+lcd Dump "C:/EmuWorks/ecran.raw"
 ```
 puis, dans un terminal :
 ```bash
-node tools/png.js C:/NumWorks/ecran.raw ecran.png
+node tools/png.js C:/EmuWorks/ecran.raw ecran.png
 ```
 
 Combine avec `keyboard TapKey`, cela permet de piloter la calculatrice et de
 verifier ce qu elle affiche en mode console, sans ouvrir de fenetre.
 
 
-Dans le moniteur (`logFile @C:/NumWorks/x.log` d'abord pour capturer dans un fichier) :
+Dans le moniteur (`logFile @C:/EmuWorks/x.log` d'abord pour capturer dans un fichier) :
 
 ```
 lcd Stats                    compteurs globaux + commandes non gérées
@@ -512,7 +515,7 @@ mais Roslyn est plus permissif, donc ce n'est qu'un premier filtre.
 Puis, sans firmware :
 
 ```bat
-cd C:\NumWorks\renode
+cd C:\EmuWorks\renode
 "C:\Program Files\Renode\bin\Renode.exe" --console --disable-xwt -e "i @smoketest.resc" -e "quit"
 ```
 

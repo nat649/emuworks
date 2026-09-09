@@ -1,7 +1,7 @@
 : ============================================================================
 :  Non-regression du boot avec le firmware EPSILON OFFICIEL 15.5.0
-:  (les images sont dans C:\NumWorks\epsilon-officiel\)
-:  Utilise par  C:\NumWorks\compare.bat
+:  (les images sont dans C:\EmuWorks\epsilon-officiel\)
+:  Utilise par  C:\EmuWorks\compare.bat
 : ============================================================================
 
 i @NumWorksDisplay.cs

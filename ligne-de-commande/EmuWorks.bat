@@ -9,7 +9,8 @@ rem
 rem  Rien d'autre a taper : double-clic suffit.
 rem ===========================================================================
 setlocal
-title Emulateur NumWorks
+set "EMUWORKS_BASE=%~dp0..\"
+title EmuWorks
 
 set "BASE=%~dp0..\"
 set "RENODE=C:\Program Files\Renode\bin\Renode.exe"

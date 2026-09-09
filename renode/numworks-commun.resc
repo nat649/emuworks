@@ -29,16 +29,19 @@ cpu VectorTableOffset 0x08000000
 emulation RunFor "3"
 
 : --- le dossier prend la main sur la calculatrice --------------------------
+:  Les chemins de 'mem' sont relatifs a EMUWORKS_BASE (racine du projet),
+:  pose par l'appelant. Ceux de 'i @' sont relatifs a CE fichier : Renode
+:  resout les deux differemment.
 :  L'adresse du stockage depend du firmware (Omega 0x20000FEC, Epsilon
 :  officiel 0x20000CF8...) : on la releve sur CETTE execution plutot que de la
 :  coder en dur. 'ref' ne touche pas a scripts/, c'est le dossier qui gagne.
-mem SaveSram "C:/NumWorks/rom/sram.bin"
-mem Shell "node" "C:/NumWorks/renode/tools/rom.js ref C:/NumWorks/rom/sram.bin C:/NumWorks/rom"
-mem Shell "node" "C:/NumWorks/renode/tools/rom.js push C:/NumWorks/rom"
+mem SaveSram "rom/sram.bin"
+mem Shell "node" "renode/tools/rom.js ref rom/sram.bin rom"
+mem Shell "node" "renode/tools/rom.js push rom"
 i @../rom/load.resc
 
 : --- sauvegarde ------------------------------------------------------------
 :  Renode n'a pas de crochet « avant fermeture » : on vide la SRAM toutes les
 :  5 s, et l'appelant transforme le dernier vidage en .py une fois Renode
 :  termine.
-mem AutoSave "C:/NumWorks/rom/sram.bin" 5
+mem AutoSave "rom/sram.bin" 5

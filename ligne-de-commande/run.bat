@@ -1,4 +1,5 @@
 @echo off
+set "EMUWORKS_BASE=%~dp0..\"
 rem ===========================================================================
 rem  Emulateur puce NumWorks N0110 (Renode)
 rem    run.bat        -> restaure la sauvegarde (flash.bin) si elle existe
@@ -8,7 +9,7 @@ rem  Dans le moniteur : 'start' pour demarrer, 'runMacro $sauver' pour sauver.
 rem ===========================================================================
 
 set "RENODE=C:\Program Files\Renode\bin\Renode.exe"
-set "SAVE=C:\NumWorks\flash.bin"
+set "SAVE=%~dp0..\flash.bin"
 
 if not exist "%RENODE%" (
   echo Renode introuvable : %RENODE%

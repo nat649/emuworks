@@ -1,5 +1,5 @@
 // ============================================================================
-//  NumWorks.exe - une seule application pour tout l'emulateur
+//  EmuWorks - une seule application pour tout l'emulateur
 // ============================================================================
 //  Renode ouvre normalement ses propres fenetres (moniteur + analyseur d'ecran).
 //  Ici il est lance SANS interface (--disable-xwt) et pilote par son entree
@@ -24,7 +24,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace NumWorksLauncher
+namespace EmuWorks
 {
     static class Program
     {
@@ -135,21 +135,25 @@ namespace NumWorksLauncher
         }
 
         // --- localisation du dossier de travail -----------------------------
-        //  Renode 1.16 ne sait pas lire un chemin contenant des espaces, donc
-        //  tout vit sous C:\NumWorks. On accepte quand meme un exe pose a cote
-        //  du dossier rom\, pour ne pas casser une copie deplacee.
+        //  L'emplacement du projet est libre (mais sans espaces : Renode 1.16
+        //  ne sait pas les lire). On part de l'exe, puis du dossier parent,
+        //  puis des emplacements habituels.
         private static string ResolveBaseDir()
         {
             string here = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
             if (Directory.Exists(Path.Combine(here, "rom"))) return here;
             string parent = Path.GetDirectoryName(here);
             if (parent != null && Directory.Exists(Path.Combine(parent, "rom"))) return parent;
-            return @"C:\NumWorks";
+            foreach (var repli in new[] { @"C:\EmuWorks", @"C:\NumWorks" })
+            {
+                if (Directory.Exists(Path.Combine(repli, "rom"))) return repli;
+            }
+            return @"C:\EmuWorks";
         }
 
         private void BuildUi()
         {
-            Text = "Emulateur NumWorks";
+            Text = "EmuWorks";
             ClientSize = new Size(1012, 600);
             MinimumSize = new Size(1028, 639);
             Font = new Font("Segoe UI", 9F);
@@ -383,6 +387,11 @@ namespace NumWorksLauncher
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };
+                //  Renode ne conserve pas son repertoire de lancement : c'est
+                //  cette variable qui dit a MemFile ou trouver rom\ et
+                //  renode\tools\. Sans elle, le projet ne serait installable
+                //  qu'a un chemin code en dur.
+                info.Environment["EMUWORKS_BASE"] = baseDir;
                 renode = Process.Start(info);
             }
             catch (Exception ex)

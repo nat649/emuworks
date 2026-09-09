@@ -11,7 +11,7 @@
 
 ## Utilisation
 
-Lance `C:\NumWorks\NumWorks.exe`. L'application :
+Lance `C:\EmuWorks\EmuWorks.exe`. L'application :
 
 - injecte les `.py` de `scripts\` dans la calculatrice au démarrage ;
 - réécrit `scripts\` avec ce qu'elle contient quand tu fermes sa fenêtre.
@@ -41,7 +41,7 @@ avec « rien » effacerait le travail. Deux protections :
 ## Commandes manuelles (avancé)
 
 L'application enchaîne ces étapes toute seule, mais elles restent disponibles
-dans `C:\NumWorks\ligne-de-commande\` :
+dans `C:\EmuWorks\ligne-de-commande\` :
 
 | | |
 |---|---|

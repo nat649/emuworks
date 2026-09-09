@@ -1,6 +1,6 @@
 : ============================================================================
 :  Non-regression du boot - mode console, sans fenetre
-:  Utilise par  C:\NumWorks\trace.bat
+:  Utilise par  C:\EmuWorks\trace.bat
 : ============================================================================
 
 i @NumWorksDisplay.cs

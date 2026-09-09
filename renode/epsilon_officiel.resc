@@ -1,7 +1,7 @@
 : ============================================================================
 :  NumWorks N0110 - Epsilon OFFICIEL 15.5.0 (compile depuis numworks/epsilon)
 : ============================================================================
-:  Lancer via  C:\NumWorks\run-epsilon.bat    puis :  start
+:  Lancer via  C:\EmuWorks\run-epsilon.bat    puis :  start
 :
 :  Difference avec Omega : Epsilon officiel demarre depuis la vue ITCM de la
 :  flash interne (0x00200000), d'ou l'alias double dans numworks_n0110.repl.

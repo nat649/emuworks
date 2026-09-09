@@ -6,8 +6,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>NumWorks</AssemblyName>
-    <RootNamespace>NumWorksLauncher</RootNamespace>
+    <AssemblyName>EmuWorks</AssemblyName>
+    <RootNamespace>EmuWorks</RootNamespace>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
     <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
   </PropertyGroup>

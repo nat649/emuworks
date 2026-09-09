@@ -203,7 +203,7 @@ namespace Antmicro.Renode.Peripherals.Video
             }
         }
 
-        // capture l ecran en RGB888 brut :  lcd Dump "C:/NumWorks/ecran.raw"
+        // capture l ecran en RGB888 brut :  lcd Dump "C:/EmuWorks/ecran.raw"
         public void Dump(string path)
         {
             byte[] rgb = new byte[ScreenWidth * ScreenHeight * 3];

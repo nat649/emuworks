@@ -1,4 +1,5 @@
 @echo off
+set "EMUWORKS_BASE=%~dp0..\"
 rem ===========================================================================
 rem  Compare le boot de deux firmwares dans le meme emulateur :
 rem    Omega 2.0.2          -> trace-omega.txt

@@ -1,6 +1,6 @@
 @echo off
 rem ===========================================================================
-rem  Synchronise le dossier C:\NumWorks\rom\ avec la calculatrice emulee.
+rem  Synchronise le dossier rom\ avec la calculatrice emulee.
 rem
 rem    rom.bat pull   apres 'runMacro $tirer' dans Renode
 rem                   -> remplit rom\scripts\ avec les .py de la calculatrice
