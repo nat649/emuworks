@@ -29,10 +29,65 @@ namespace EmuWorks
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             ApplicationConfiguration.Initialize();
+            //  Mode apercu : rend le panneau ecran dans un PNG, sans ouvrir de
+            //  fenetre. Sert a verifier l'apparence depuis un terminal.
+            //    EmuWorks.exe --apercu <trame.raw RGB888> <sortie.png> [largeur hauteur]
+            if (args.Length >= 3 && args[0] == "--apercu")
+            {
+                Apercu(args);
+                return;
+            }
             Application.Run(new MainForm());
+        }
+
+        private static void Apercu(string[] args)
+        {
+            //  Sans ce filet, une exception ici ouvrirait une boite de dialogue
+            //  et l'application resterait bloquee : inutilisable depuis un
+            //  terminal, qui est pourtant tout l'interet de ce mode.
+            try
+            {
+                RendreApercu(args);
+            }
+            catch (Exception ex)
+            {
+                try { File.WriteAllText(args[2] + ".erreur.txt", ex.ToString()); } catch { }
+                Environment.Exit(1);
+            }
+        }
+
+        private static void RendreApercu(string[] args)
+        {
+            int largeur = args.Length >= 5 ? int.Parse(args[3]) : 640;
+            int hauteur = args.Length >= 5 ? int.Parse(args[4]) : 480;
+
+            var panneau = new EcranPanel();
+            byte[] rgb888 = File.ReadAllBytes(args[1]);
+            int pixels = EcranPanel.LargeurEcran * EcranPanel.HauteurEcran;
+            if (rgb888.Length >= pixels * 3)
+            {
+                byte[] rgb565 = new byte[pixels * 2];
+                for (int i = 0; i < pixels; i++)
+                {
+                    int c = ((rgb888[i * 3] >> 3) << 11)
+                          | ((rgb888[i * 3 + 1] >> 2) << 5)
+                          | (rgb888[i * 3 + 2] >> 3);
+                    rgb565[i * 2] = (byte)(c & 0xFF);
+                    rgb565[i * 2 + 1] = (byte)(c >> 8);
+                }
+                panneau.Afficher(rgb565);
+            }
+
+            using var rendu = new Bitmap(largeur, hauteur);
+            using (var g = Graphics.FromImage(rendu))
+            {
+                panneau.Dessiner(g, new Rectangle(0, 0, largeur, hauteur));
+            }
+            rendu.Save(args[2], ImageFormat.Png);
+            Console.WriteLine("apercu " + largeur + "x" + hauteur + " -> " + args[2]);
         }
     }
 
@@ -42,14 +97,19 @@ namespace EmuWorks
         public const int LargeurEcran = 320;
         public const int HauteurEcran = 240;
 
+        private static readonly Color Fond = Color.FromArgb(27, 29, 33);
+        private static readonly Color Coque = Color.FromArgb(42, 44, 49);
+        private static readonly Color Lisere = Color.FromArgb(62, 65, 72);
+
         private readonly Bitmap image;
 
         public EcranPanel()
         {
             image = new Bitmap(LargeurEcran, HauteurEcran, PixelFormat.Format16bppRgb565);
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
-                     | ControlStyles.UserPaint | ControlStyles.Selectable, true);
-            BackColor = Color.FromArgb(24, 24, 28);
+                     | ControlStyles.UserPaint | ControlStyles.Selectable
+                     | ControlStyles.ResizeRedraw, true);
+            BackColor = Fond;
             TabStop = true;
         }
 
@@ -76,25 +136,92 @@ namespace EmuWorks
             Invalidate();
         }
 
+        //  La dalle fait 320x240. On ne l'etire pas a la taille du panneau : on
+        //  cherche le plus grand agrandissement ENTIER qui rentre, et on centre.
+        //  Un facteur non entier (2,3x par exemple) dedouble une ligne de pixels
+        //  sur trois -- le texte de la calculatrice en devient bancal.
+        private static Rectangle ZoneDalle(Rectangle panneau)
+        {
+            const int marge = 26;
+            int largeurDispo = Math.Max(1, panneau.Width - 2 * marge);
+            int hauteurDispo = Math.Max(1, panneau.Height - 2 * marge);
+            int facteur = Math.Min(largeurDispo / LargeurEcran, hauteurDispo / HauteurEcran);
+            if (facteur < 1) facteur = 1;
+            int l = LargeurEcran * facteur, h = HauteurEcran * facteur;
+            return new Rectangle(panneau.X + (panneau.Width - l) / 2,
+                                 panneau.Y + (panneau.Height - h) / 2, l, h);
+        }
+
+        private static GraphicsPath Arrondi(Rectangle r, int rayon)
+        {
+            var chemin = new GraphicsPath();
+            int d = rayon * 2;
+            chemin.AddArc(r.X, r.Y, d, d, 180, 90);
+            chemin.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            chemin.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            chemin.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            chemin.CloseFigure();
+            return chemin;
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.Clear(BackColor);
+            Dessiner(e.Graphics, ClientRectangle);
+        }
+
+        //  Separe de OnPaint pour pouvoir rendre le panneau hors fenetre (voir
+        //  le mode --apercu) : c'est la seule facon de verifier l'apparence
+        //  sans ouvrir l'application.
+        public void Dessiner(Graphics g, Rectangle panneau)
+        {
+            using (var fond = new SolidBrush(BackColor))
+            {
+                g.FillRectangle(fond, panneau);
+            }
+
+            Rectangle dalle = ZoneDalle(panneau);
+            Rectangle coque = Rectangle.Inflate(dalle, 14, 14);
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // ombre portee : quelques passes de plus en plus larges et pales
+            for (int i = 6; i >= 1; i--)
+            {
+                var halo = Rectangle.Inflate(coque, i * 2, i * 2);
+                halo.Offset(0, i);
+                using var chemin = Arrondi(halo, 12 + i * 2);
+                using var pinceau = new SolidBrush(Color.FromArgb(10, 0, 0, 0));
+                g.FillPath(pinceau, chemin);
+            }
+
+            using (var chemin = Arrondi(coque, 12))
+            using (var pinceau = new SolidBrush(Coque))
+            using (var crayon = new Pen(Lisere))
+            {
+                g.FillPath(pinceau, chemin);
+                g.DrawPath(crayon, chemin);
+            }
+
             if (!Allume)
             {
-                using var police = new Font("Segoe UI", 11F);
-                using var pinceau = new SolidBrush(Color.FromArgb(150, 150, 160));
+                using var eteint = new SolidBrush(Color.FromArgb(18, 19, 22));
+                g.FillRectangle(eteint, dalle);
+                using var police = new Font("Segoe UI", 10.5F);
+                using var texte = new SolidBrush(Color.FromArgb(120, 122, 132));
                 var format = new StringFormat
                 {
                     Alignment = StringAlignment.Center,
                     LineAlignment = StringAlignment.Center
                 };
-                e.Graphics.DrawString("Calculatrice arretee", police, pinceau, ClientRectangle, format);
+                g.DrawString("Calculatrice arretee", police, texte, dalle, format);
                 return;
             }
-            // pixels carres : la dalle fait 320x240, on l'agrandit sans lisser
-            e.Graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
-            e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
-            e.Graphics.DrawImage(image, ClientRectangle);
+
+            // pixels carres : on agrandit sans lisser
+            g.SmoothingMode = SmoothingMode.None;
+            g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.DrawImage(image, dalle);
         }
     }
 
@@ -154,8 +281,10 @@ namespace EmuWorks
         private void BuildUi()
         {
             Text = "EmuWorks";
-            ClientSize = new Size(1012, 600);
-            MinimumSize = new Size(1028, 639);
+            //  Le panneau ecran doit loger 2x la dalle (640x480) PLUS la marge
+            //  et le cadre, sinon l'agrandissement entier retombe a 1x.
+            ClientSize = new Size(1102, 688);
+            MinimumSize = new Size(1118, 727);
             Font = new Font("Segoe UI", 9F);
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
@@ -189,24 +318,33 @@ namespace EmuWorks
             var logLabel = new Label { Text = "Journal :", AutoSize = true, Location = new Point(14, 388) };
             logBox = new TextBox
             {
-                Location = new Point(14, 408), Size = new Size(330, 172),
+                Location = new Point(14, 408), Size = new Size(330, 260),
                 Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-                Font = new Font("Consolas", 8.5F), BackColor = Color.White, TabStop = false
+                Font = new Font("Consolas", 8.5F), BackColor = Color.White, TabStop = false,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom
             };
 
-            ecran = new EcranPanel { Location = new Point(358, 48), Size = new Size(640, 480) };
+            //  L'ecran suit la taille de la fenetre : agrandir la fenetre agrandit
+            //  la calculatrice, par bonds entiers (2x, 3x...) pour rester net.
+            ecran = new EcranPanel
+            {
+                Location = new Point(358, 48), Size = new Size(730, 570),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+            };
 
             startButton = new Button
             {
                 Text = "Demarrer la calculatrice",
-                Location = new Point(358, 540), Size = new Size(240, 44),
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold)
+                Location = new Point(358, 630), Size = new Size(240, 44),
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                Anchor = AnchorStyles.Left | AnchorStyles.Bottom
             };
             startButton.Click += OnStartStop;
 
             statusLabel = new Label
             {
-                Location = new Point(612, 554), AutoSize = true, ForeColor = Color.DimGray
+                Location = new Point(612, 644), AutoSize = true, ForeColor = Color.DimGray,
+                Anchor = AnchorStyles.Left | AnchorStyles.Bottom
             };
 
             Controls.AddRange(new Control[]

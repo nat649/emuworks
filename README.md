@@ -74,7 +74,9 @@ Lance `EmuWorks.exe`. Une seule fenêtre :
 
 - choix du firmware parmi ceux posés dans `firmwares/` ;
 - gestion des scripts Python : ajouter, supprimer, ouvrir dans ton éditeur ;
-- l'écran de la calculatrice, au clavier de ton PC ;
+- l'écran de la calculatrice, au clavier de ton PC — agrandi par facteur
+  **entier** (2×, 3×…) pour rester net, et centré dans un cadre ; agrandir la
+  fenêtre agrandit la calculatrice ;
 - enregistrement automatique à l'arrêt.
 
 ### Le dossier `rom/` **est** la calculatrice

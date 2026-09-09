@@ -451,6 +451,20 @@ C'est ce qui permet de n'avoir qu'une seule fenetre : Renode est lance sans
 interface et l'application affiche l'ecran elle-meme. Le format RGB565 est celui
 de la dalle, donc `Bitmap` le prend sans conversion (`Format16bppRgb565`).
 
+## Verifier l'apparence sans ouvrir l'application
+
+```bat
+EmuWorks.exe --apercu <trame.raw> <sortie.png> [largeur hauteur]
+```
+
+Rend le panneau ecran dans un PNG et quitte, sans ouvrir de fenetre. La trame
+d'entree est un RGB888 brut de 320x240 : soit `lcd Dump`, soit ce que renvoie
+le serveur d'images. C'est le seul moyen de controler l'aspect (cadre,
+agrandissement, centrage) depuis un terminal.
+
+Le dessin est dans `EcranPanel.Dessiner(Graphics, Rectangle)`, separe de
+`OnPaint` exactement pour ca.
+
 ## Outils de diagnostic de l'écran
 
 Capture d ecran (verification visuelle sans interface graphique) :
