@@ -464,7 +464,21 @@ namespace NumWorksLauncher
                     }
                     byte[] copie = (byte[])trame.Clone();
                     if (!IsHandleCreated) return;
-                    BeginInvoke(new Action(() => ecran.Afficher(copie)));
+                    BeginInvoke(new Action(() =>
+                    {
+                        try
+                        {
+                            ecran.Afficher(copie);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Une exception sur le fil interface tuerait
+                            // l'application : mieux vaut un ecran fige et un
+                            // message que la fenetre qui disparait.
+                            enMarche = false;
+                            Log("Affichage impossible : " + ex.Message);
+                        }
+                    }));
                     Thread.Sleep(33);
                 }
             }
