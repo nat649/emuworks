@@ -1,0 +1,51 @@
+: ============================================================================
+:  Le dossier C:\NumWorks\rom\ EST la calculatrice.
+: ============================================================================
+:    rom\internal.bin   -> flash interne  0x08000000
+:    rom\external.bin   -> flash externe  0x90000000
+:    rom\scripts\*.py   -> scripts Python (SRAM)
+:
+:  Dans le moniteur, apres 'start' :
+:    runMacro $tirer    la calculatrice  -> le dossier
+:    runMacro $pousser  le dossier       -> la calculatrice
+: ============================================================================
+
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+
+mach add "nw"
+mach set "nw"
+
+machine LoadPlatformDescription @numworks_n0110.repl
+
+showAnalyzer lcd
+showAnalyzer usart3
+
+sysbus LoadBinary @../rom/internal.bin 0x08000000
+sysbus LoadBinary @../rom/external.bin 0x90000000
+cpu VectorTableOffset 0x08000000
+
+
+: --- la calculatrice vers le dossier ---
+:   vide la SRAM, puis  rom.bat pull  la transforme en fichiers .py
+macro tirer
+"""
+    mem SaveSram "C:/NumWorks/rom/sram.bin"
+    echo "SRAM videe. Lance maintenant :  C:\NumWorks\rom.bat pull"
+"""
+
+: --- le dossier vers la calculatrice ---
+:   rom.bat push a genere rom/load.resc avec la bonne adresse
+macro pousser
+"""
+    i @../rom/load.resc
+"""
+
+echo ""
+echo "Tape 'start'."
+echo "  runMacro $tirer     calculatrice -> dossier   (puis rom.bat pull)"
+echo "  runMacro $pousser   dossier -> calculatrice   (apres rom.bat push)"
+echo "  (GDB : tape  machine StartGdbServer 3333  si besoin)"

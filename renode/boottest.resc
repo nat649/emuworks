@@ -1,0 +1,19 @@
+: ============================================================================
+:  Non-regression du boot - mode console, sans fenetre
+:  Utilise par  C:\NumWorks\trace.bat
+: ============================================================================
+
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+
+mach add "nw"
+mach set "nw"
+
+machine LoadPlatformDescription @numworks_n0110.repl
+
+sysbus LoadBinary @epsilon.onboarding.internal.bin 0x08000000
+sysbus LoadBinary @epsilon.onboarding.external.bin 0x90000000
+cpu VectorTableOffset 0x08000000

@@ -1,0 +1,175 @@
+// ============================================================================
+//  NumWorks N0110  -  plateforme Renode (émulateur au niveau de la puce)
+// ============================================================================
+//  MCU  : STM32F730V8T6  (Cortex-M7, 64 KiB flash interne, 256 KiB SRAM)
+//  Flash externe : 8 MiB NOR QSPI, mappée en mémoire à 0x90000000
+//                  (elle contient le kernel + le userland + les apps)
+//  Écran : ST7789V 320x240 via le FMC   -> périphérique NumWorksDisplay
+//  Clavier : matrice 9x6 sur GPIOA/GPIOC -> périphérique NumWorksKeyboard
+//
+//  Constantes vérifiées sur numworks/epsilon @ 15.5.0
+//  (ion/src/device/n0110/drivers/config/{board,display,keyboard}.h)
+//
+//  Les périphériques non essentiels sont "Tag"és pour éviter les fautes de bus.
+// ============================================================================
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m7"
+    nvic: nvic
+    numberOfMPURegions: 8
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    priorityMask: 0xF0
+    systickFrequency: 192000000
+    IRQ -> cpu@0
+
+// ---- Mémoires -----------------------------------------------------------
+
+itcm: Memory.MappedMemory @ sysbus 0x00000000
+    size: 0x10000
+
+// Flash interne 64 KiB, vue simultanement a deux adresses (c'est la MEME puce) :
+//   0x08000000 = vue AXIM      (Omega y place son vecteur de reset)
+//   0x00200000 = vue ITCM      (Epsilon officiel y place le sien : 0x002001F9)
+// Les declarer comme deux memoires distinctes empeche Epsilon officiel de booter.
+flash: Memory.MappedMemory @ {
+        sysbus 0x08000000;
+        sysbus 0x00200000
+    }
+    size: 0x10000
+
+// SRAM 256 KiB (DTCM 0x20000000 + SRAM1/2 contigus)
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x40000
+
+// flash externe QSPI mappée en mémoire : kernel + userland + apps
+qspi_flash: Memory.MappedMemory @ sysbus 0x90000000
+    size: 0x800000
+
+// zone systeme / OTP (numero de serie lu par Epsilon) - sinon lecture hors bus
+otp: Memory.MappedMemory @ sysbus 0x1FF07800
+    size: 0x800
+
+// ---- Horloges / alimentation -----------------------------------------
+
+rtc: Timers.STM32F4_RTC @ sysbus <0x40002800, +0x400>
+
+rcc: Miscellaneous.STM32F4_RCC @ sysbus 0x40023800
+    rtcPeripheral: rtc
+
+// ---- Aleatoire materiel (Python random, app Probabilites) -----------
+rng: Miscellaneous.STM32F4_RNG @ sysbus 0x50060800
+
+// ---- Unite CRC32 (verifications d'integrite Epsilon) ----------------
+crc: Miscellaneous.NumWorksCrc @ sysbus 0x40023000
+
+// ---- Acces memoire <-> fichier (adresse fictive, non lue par le firmware) ----
+mem: Miscellaneous.MemFile @ sysbus <0x10000100, +0x100>
+
+// ---- Alimentation : gere ODEN->ODRDY / ODSWEN->ODSWRDY / VOS->VOSRDY -----
+pwr: Miscellaneous.STM32_PWR @ sysbus 0x40007000
+
+// ---- Interface flash interne --------------------------------------------
+flash_ctrl: MTD.STM32F4_FlashController @ sysbus 0x40023C00
+    flash: flash
+
+// ---- ADC1 : tension batterie (DR a l'offset 0x4C) -----------------------
+adc: Miscellaneous.NumWorksAdc @ sysbus 0x40012000
+
+// ---- DMA (Epsilon pousse les pixels vers le FMC via DMA2) ------------
+
+dma1: DMA.STM32DMA @ sysbus 0x40026000
+    0 -> nvic@11
+    1 -> nvic@12
+    2 -> nvic@13
+    3 -> nvic@14
+    4 -> nvic@15
+    5 -> nvic@16
+    6 -> nvic@17
+    7 -> nvic@47
+
+dma2: DMA.STM32DMA @ sysbus 0x40026400
+    0 -> nvic@56
+    1 -> nvic@57
+    2 -> nvic@58
+    3 -> nvic@59
+    4 -> nvic@60
+    5 -> nvic@68
+    6 -> nvic@69
+    7 -> nvic@70
+
+// ---- UART -----------------------------------------------------------
+
+usart3: UART.STM32F7_USART @ sysbus 0x40004800
+    frequency: 48000000
+    IRQ -> nvic@39
+
+usart6: UART.STM32F7_USART @ sysbus 0x40011400
+    frequency: 48000000
+    IRQ -> nvic@71
+
+// ---- GPIO ---------------------------------------------------------
+
+gpioa: GPIOPort.STM32_GPIOPort @ sysbus <0x40020000, +0x400>
+    // lignes clavier -> matrice (broche p -> keyboard@p)
+    0 -> keyboard@0
+    1 -> keyboard@1
+    2 -> keyboard@2
+    3 -> keyboard@3
+    4 -> keyboard@4
+    5 -> keyboard@5
+    6 -> keyboard@6
+    7 -> keyboard@7
+    8 -> keyboard@8
+
+gpiob: GPIOPort.STM32_GPIOPort @ sysbus <0x40020400, +0x400>
+gpioc: GPIOPort.STM32_GPIOPort @ sysbus <0x40020800, +0x400>
+gpiod: GPIOPort.STM32_GPIOPort @ sysbus <0x40020C00, +0x400>
+gpioe: GPIOPort.STM32_GPIOPort @ sysbus <0x40021000, +0x400>
+gpiof: GPIOPort.STM32_GPIOPort @ sysbus <0x40021400, +0x400>
+gpiog: GPIOPort.STM32_GPIOPort @ sysbus <0x40021800, +0x400>
+gpioh: GPIOPort.STM32_GPIOPort @ sysbus <0x40021C00, +0x400>
+
+// ---- Écran ST7789 sur le bus FMC ----------------------------------
+
+lcd: Video.NumWorksDisplay @ sysbus <0x60000000, +0x40000>
+
+// ---- Clavier matriciel -----------------------------------------
+
+keyboard: Input.NumWorksKeyboard @ sysbus <0x10000000, +0x100>
+    // colonnes -> entrées GPIOC 0..5
+    Col0 -> gpioc@0
+    Col1 -> gpioc@1
+    Col2 -> gpioc@2
+    Col3 -> gpioc@3
+    Col4 -> gpioc@4
+    Col5 -> gpioc@5
+
+// ---- Timers ---------------------------------------------------
+
+tim2: Timers.STM32_Timer @ sysbus 0x40000000
+    frequency: 96000000
+    initialLimit: 0xFFFFFFFF
+    IRQ -> nvic@28
+
+tim3: Timers.STM32_Timer @ sysbus 0x40000400
+    frequency: 96000000
+    initialLimit: 0xFFFF
+    IRQ -> nvic@29
+
+// ---- Régions "avalées" (registres sans effet pour l'amorçage) -----
+
+sysbus:
+    init:
+        // SYSCFG : le modele STM32_SYSCFG de Renode n'implemente PAS le registre
+        // CMPCR (0x20) dont le firmware attend le bit READY -> on garde le bouchon.
+        Tag <0x40013800, 0x4001381F> "SYSCFG" 0x00000000
+        Tag <0x40013820, 0x40013823> "SYSCFG_CMPCR" 0x00000100
+        Tag <0x40013824, 0x40013BFF> "SYSCFG2" 0x00000000
+        Tag <0xA0001000, 0xA00010FF> "QUADSPI" 0x00000000
+        Tag <0xA0000000, 0xA0000FFF> "FMC_CTRL" 0x00000000
+        // USB OTG FS : GRSTCTL (0x10) -> AHBIDL=1, CSRST=0 ; reste = 0
+        Tag <0x50000000, 0x5000000F> "OTG_A" 0x00000000
+        Tag <0x50000010, 0x50000013> "OTG_GRSTCTL" 0x80000000
+        Tag <0x50000014, 0x5003FFFF> "OTG_B" 0x00000000
+        Tag <0xE0042000, 0xE0042FFF> "DBGMCU" 0x10006451

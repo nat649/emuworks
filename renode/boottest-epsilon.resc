@@ -1,0 +1,20 @@
+: ============================================================================
+:  Non-regression du boot avec le firmware EPSILON OFFICIEL 15.5.0
+:  (les images sont dans C:\NumWorks\epsilon-officiel\)
+:  Utilise par  C:\NumWorks\compare.bat
+: ============================================================================
+
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+
+mach add "nw"
+mach set "nw"
+
+machine LoadPlatformDescription @numworks_n0110.repl
+
+sysbus LoadBinary @../epsilon-officiel/epsilon.onboarding.internal.bin 0x08000000
+sysbus LoadBinary @../epsilon-officiel/epsilon.onboarding.external.bin 0x90000000
+cpu VectorTableOffset 0x08000000

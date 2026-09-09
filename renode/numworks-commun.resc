@@ -1,0 +1,44 @@
+: ============================================================================
+:  NumWorks N0110 - partie commune (ne pas lancer directement)
+: ============================================================================
+:  Monte la machine, charge le firmware du dossier rom\ et y injecte les
+:  scripts Python. S'arrete juste avant 'start' : c'est a l'appelant de
+:  choisir comment l'ecran est affiche.
+:
+:    numworks.resc           fenetre Renode classique
+:    numworks-embarque.resc  sans interface, ecran servi a l'application
+: ============================================================================
+
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+
+mach add "nw"
+mach set "nw"
+machine LoadPlatformDescription @numworks_n0110.repl
+
+sysbus LoadBinary @../rom/internal.bin 0x08000000
+sysbus LoadBinary @../rom/external.bin 0x90000000
+cpu VectorTableOffset 0x08000000
+
+: --- amorcage -------------------------------------------------------------
+:  On laisse Epsilon construire son stockage AVANT d'y ecrire : injecter les
+:  scripts trop tot, ils seraient effaces par l'initialisation.
+emulation RunFor "3"
+
+: --- le dossier prend la main sur la calculatrice --------------------------
+:  L'adresse du stockage depend du firmware (Omega 0x20000FEC, Epsilon
+:  officiel 0x20000CF8...) : on la releve sur CETTE execution plutot que de la
+:  coder en dur. 'ref' ne touche pas a scripts/, c'est le dossier qui gagne.
+mem SaveSram "C:/NumWorks/rom/sram.bin"
+mem Shell "node" "C:/NumWorks/renode/tools/rom.js ref C:/NumWorks/rom/sram.bin C:/NumWorks/rom"
+mem Shell "node" "C:/NumWorks/renode/tools/rom.js push C:/NumWorks/rom"
+i @../rom/load.resc
+
+: --- sauvegarde ------------------------------------------------------------
+:  Renode n'a pas de crochet « avant fermeture » : on vide la SRAM toutes les
+:  5 s, et l'appelant transforme le dernier vidage en .py une fois Renode
+:  termine.
+mem AutoSave "C:/NumWorks/rom/sram.bin" 5

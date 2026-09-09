@@ -1,0 +1,39 @@
+MIT License
+
+Copyright (c) 2026 nat649
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Cette licence couvre le contenu de ce depot : les modeles de peripheriques
+Renode, les outils, l'application et la documentation.
+
+Elle ne couvre PAS, et ce depot ne distribue PAS :
+
+  - Epsilon, le firmware NumWorks -- (c) NumWorks, licence Creative Commons
+    BY-NC-SA 4.0. https://github.com/numworks/epsilon
+  - Omega, son fork communautaire, sous la meme licence.
+  - Renode, l'infrastructure d'emulation -- (c) Antmicro, licence MIT.
+    https://github.com/renode/renode
+
+Les modeles de peripheriques de ce depot decrivent le materiel du STM32F730 et
+de la carte N0110 (registres, protocole de la dalle ST7789V, matrice clavier).
+Ils sont ecrits a partir de la documentation du composant et de l'observation
+du comportement du firmware, pas derives de son code.

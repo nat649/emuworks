@@ -1,0 +1,29 @@
+: ============================================================================
+:  Test de chargement - AUCUN firmware requis
+:  Verifie que les .cs compilent et que la plateforme se monte.
+: ============================================================================
+
+i @NumWorksDisplay.cs
+echo ">>> NumWorksDisplay.cs : compile OK"
+
+i @NumWorksKeyboard.cs
+echo ">>> NumWorksKeyboard.cs : compile OK"
+
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+echo ">>> NumWorksCrc / Adc / MemFile : compile OK"
+
+mach add "nw"
+mach set "nw"
+
+machine LoadPlatformDescription @numworks_n0110.repl
+echo ">>> numworks_n0110.repl : charge OK"
+
+peripherals
+
+keyboard TapKey "SEVEN"
+keyboard TapKey "EXE"
+echo ">>> clavier : TapKey OK"
+
+echo ">>> TOUT EST BON"

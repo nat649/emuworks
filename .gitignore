@@ -1,0 +1,43 @@
+# ============================================================================
+#  Ce que ce depot ne doit JAMAIS contenir
+# ============================================================================
+#  Epsilon est publie par NumWorks sous licence Creative Commons
+#  BY-NC-SA 4.0 (attribution, pas d'usage commercial, partage a l'identique).
+#  On ne redistribue donc aucun binaire de firmware : chacun compile le sien
+#  depuis les sources officielles avec renode/build-firmware-n0110.yml.
+#
+#  L'emulateur lui-meme (modeles de peripheriques, outils, application) est du
+#  code original : voir LICENSE.
+# ============================================================================
+
+# --- firmwares et images memoire -------------------------------------------
+*.bin
+*.dfu
+*.elf
+*.hex
+firmwares/
+epsilon-officiel/
+
+# --- etat local de la calculatrice emulee ----------------------------------
+#  Le dossier rom\ est un espace de travail, pas du code. Les scripts qui s'y
+#  trouvent viennent des exemples livres avec la calculatrice : eux non plus
+#  n'ont pas a etre redistribues.
+rom/sram.bin
+rom/.storage.bin
+rom/.storage.json
+rom/load.resc
+rom/scripts/
+rom/.scripts-precedents/
+
+# --- artefacts de compilation ----------------------------------------------
+app/bin/
+app/obj/
+NumWorks.exe
+
+# --- traces, captures, sorties de debogage ---------------------------------
+*.raw
+/*.png
+trace*.txt
+out.txt
+lancement.txt
+emb*.txt

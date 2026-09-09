@@ -1,0 +1,36 @@
+: ============================================================================
+:  NumWorks N0110 - Epsilon OFFICIEL 15.5.0 (compile depuis numworks/epsilon)
+: ============================================================================
+:  Lancer via  C:\NumWorks\run-epsilon.bat    puis :  start
+:
+:  Difference avec Omega : Epsilon officiel demarre depuis la vue ITCM de la
+:  flash interne (0x00200000), d'ou l'alias double dans numworks_n0110.repl.
+: ============================================================================
+
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+
+mach add "nw"
+mach set "nw"
+
+machine LoadPlatformDescription @numworks_n0110.repl
+
+showAnalyzer lcd
+showAnalyzer usart3
+
+macro load_fw
+"""
+    sysbus LoadBinary @../epsilon-officiel/epsilon.onboarding.internal.bin 0x08000000
+    sysbus LoadBinary @../epsilon-officiel/epsilon.onboarding.external.bin 0x90000000
+    cpu VectorTableOffset 0x08000000
+"""
+runMacro $load_fw
+
+machine StartGdbServer 3333
+
+echo ""
+echo "Epsilon officiel 15.5.0. Tape 'start'."
+echo "Symboles GDB : ../epsilon-officiel/epsilon.onboarding.elf"

@@ -1,0 +1,13 @@
+: ============================================================================
+:  NumWorks N0110 - ecran servi a l'application (aucune fenetre Renode)
+: ============================================================================
+:  Utilise par NumWorks.exe, qui lance Renode avec --disable-xwt et pilote le
+:  moniteur par son entree standard. L'ecran arrive par une socket locale :
+:  un octet de requete, une trame 320x240 RGB565 en reponse.
+: ============================================================================
+
+i @numworks-commun.resc
+
+lcd Serve 3555
+
+start

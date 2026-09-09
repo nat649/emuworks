@@ -1,0 +1,60 @@
+: ============================================================================
+:  NumWorks N0110 - emulateur puce (Renode)
+:  Firmware embarque : Omega 2.0.2 (fork communautaire basé sur Epsilon 15.5.0)
+: ============================================================================
+:  Lancer via  C:\NumWorks\run.bat  (il se place dans ce dossier, sinon les
+:  chemins relatifs ci-dessous ne resolvent pas).
+:  Puis :  start
+: ============================================================================
+
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+
+mach add "nw"
+mach set "nw"
+
+machine LoadPlatformDescription @numworks_n0110.repl
+
+: --- ecran + console serie ---
+showAnalyzer lcd
+showAnalyzer usart3
+
+: --- firmware : image interne (bootloader) + externe (kernel + userland) ---
+macro load_fw
+"""
+    sysbus LoadBinary @epsilon.onboarding.internal.bin 0x08000000
+    sysbus LoadBinary @epsilon.onboarding.external.bin 0x90000000
+    cpu VectorTableOffset 0x08000000
+"""
+runMacro $load_fw
+
+machine StartGdbServer 3333
+
+: --- sauvegarde de l'etat (onboarding, reglages, scripts Python...) --------
+:   tape  runMacro $sauver   dans le moniteur
+: On ne peut pas utiliser Save/Load (snapshot) : les peripheriques C# compiles a la
+: volee changent d'assembly a chaque lancement -> "snapshot is incompatible".
+: On persiste donc la flash externe, ou Epsilon range tout ce qui doit survivre.
+macro sauver
+"""
+    pause
+    mem SaveFlash "C:/NumWorks/flash.bin"
+    mem SaveSram "C:/NumWorks/sram.bin"
+    start
+    echo "Sauvegarde faite. run.bat la rechargera automatiquement."
+"""
+
+macro restaurer
+"""
+    mem LoadFlash "C:/NumWorks/flash.bin"
+    mem LoadSram "C:/NumWorks/sram.bin"
+"""
+
+echo ""
+echo "Tape 'start'."
+echo "Touches      : keyboard TapKey \"SEVEN\" / \"PLUS\" / \"THREE\" / \"EXE\""
+echo "Vrai clavier : menu 'Keyboard:' de la fenetre lcd -> keyboard"
+echo "Sauvegarder  : runMacro $sauver     (restaurer : runMacro $restaurer)"
