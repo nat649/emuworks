@@ -14,6 +14,10 @@
 //     mem SaveFlash "..."     / mem LoadFlash "..."     QSPI 8 Mo    @0x90000000
 //     mem SaveInternal "..."  / mem LoadInternal "..."  flash 64 Ko  @0x08000000
 //
+//  Numero de serie (base64 des 96 bits d'identifiant unique) :
+//     mem SetSerial "EmuWorks"
+//     mem SerialFromFile "rom/serie.txt"
+//
 //  Sauvegarde automatique (pour que fermer la fenetre ne perde rien) :
 //     mem AutoSave "C:/EmuWorks/rom/sram.bin" 5     toutes les 5 s
 //     mem AutoSave "" 0                             desactive
@@ -122,6 +126,67 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
 
         public void SaveInternal(string path) { Save(path, IntBase, IntSize); }
         public void LoadInternal(string path) { Load(path, IntBase); }
+
+
+        // ---- numero de serie ----------------------------------------------
+        //  Epsilon n'a pas de numero de serie stocke : il encode en base64 les
+        //  96 bits d'identifiant unique du STM32, lus a 0x1FF07A10
+        //  (ion/src/device/shared/drivers/serial_number.cpp). 12 octets font
+        //  exactement 16 caracteres, sans remplissage -- donc n'importe quel
+        //  texte de 16 caracteres de l'alphabet base64 est un identifiant
+        //  valide, et le numero affiche se choisit librement.
+        public void SetSerial(string texte)
+        {
+            string propre = Alphabet(texte);
+            if(propre.Length == 0)
+            {
+                this.Log(LogLevel.Warning, "Numero de serie : aucun caractere utilisable dans \"{0}\".", texte);
+                this.Log(LogLevel.Warning, "Caracteres admis : A-Z a-z 0-9 + / (alphabet base64).");
+                return;
+            }
+            //  Trop court : on repete le motif plutot que de bourrer de zeros,
+            //  "EmuWorks" donne "EmuWorksEmuWorks" et reste lisible.
+            while(propre.Length < SerialLength)
+            {
+                propre = propre + propre;
+            }
+            propre = propre.Substring(0, SerialLength);
+            try
+            {
+                byte[] identifiant = Convert.FromBase64String(propre);
+                machine.GetSystemBus(this).WriteBytes(identifiant, (ulong)UidBase, false, null);
+                this.Log(LogLevel.Info, "Numero de serie : {0}", propre);
+            }
+            catch(Exception e)
+            {
+                this.Log(LogLevel.Error, "Numero de serie refuse : {0}", e.Message);
+            }
+        }
+
+        //  Fichier optionnel : absent, la calculatrice garde l'identifiant nul.
+        public void SerialFromFile(string path)
+        {
+            string chemin = Resoudre(path);
+            if(!File.Exists(chemin))
+            {
+                return;
+            }
+            SetSerial(File.ReadAllText(chemin));
+        }
+
+        private static string Alphabet(string texte)
+        {
+            const string admis = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            var retenu = new System.Text.StringBuilder();
+            for(int i = 0; i < texte.Length; i++)
+            {
+                if(admis.IndexOf(texte[i]) >= 0)
+                {
+                    retenu.Append(texte[i]);
+                }
+            }
+            return retenu.ToString();
+        }
 
         // ---- appel d'un outil externe ------------------------------------
         //  Le moniteur Renode ne sait pas lancer de processus : sans ca, chaque
@@ -244,6 +309,9 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private const long SramSize = 0x40000;
         private const long QspiBase = 0x90000000;
         private const long QspiSize = 0x800000;
+        //  identifiant unique du STM32F730, dans la zone OTP
+        private const long UidBase = 0x1FF07A10;
+        private const int SerialLength = 16;
         private const long IntBase  = 0x08000000;
         private const long IntSize  = 0x10000;
     }

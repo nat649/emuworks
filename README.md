@@ -85,7 +85,8 @@ Lance `EmuWorks.exe`. Une seule fenêtre :
 rom/
 ├── internal.bin      flash interne  → 0x08000000
 ├── external.bin      flash externe  → 0x90000000
-└── scripts/*.py      les scripts Python, en vrais fichiers texte
+├── scripts/*.py      les scripts Python, en vrais fichiers texte
+└── serie.txt         le numéro de série affiché par la calculatrice
 ```
 
 Au démarrage, les `.py` du dossier sont injectés dans la calculatrice ; à

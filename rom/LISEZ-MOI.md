@@ -5,6 +5,7 @@
 | `internal.bin` | flash interne → chargée à `0x08000000` |
 | `external.bin` | flash externe → chargée à `0x90000000` |
 | `scripts/*.py` | les scripts Python, en vrais fichiers texte |
+| `serie.txt` | le numéro de série affiché par la calculatrice |
 | `sram.bin` | vidage de travail (régénéré, ne pas éditer) |
 | `.storage.bin` / `.storage.json` / `load.resc` | intermédiaires générés |
 | `.scripts-precedents/` | copie de `scripts/` faite avant chaque démarrage |
@@ -19,6 +20,15 @@ Lance `C:\EmuWorks\EmuWorks.exe`. L'application :
 Autrement dit : **le dossier fait autorité au démarrage, la calculatrice fait
 autorité à la fermeture.** Tu peux éditer `scripts\*.py` avec ton éditeur
 habituel, les mettre sous git, les diffuser.
+
+## Changer le numéro de série
+
+Écris ce que tu veux dans `serie.txt`. Epsilon n'a pas de numéro de série
+stocké : il encode en base64 l'identifiant unique du processeur, donc seize
+caractères de l'alphabet `A-Z a-z 0-9 + /` suffisent à le choisir. Un texte
+plus court est répété — `EmuWorks` donne `EmuWorksEmuWorks`.
+
+Visible dans **Paramètres → À propos**.
 
 ## Changer de firmware
 

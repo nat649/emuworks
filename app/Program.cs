@@ -243,6 +243,7 @@ namespace EmuWorks
         private Button addButton, removeButton, folderButton;
         private Button startButton;
         private TextBox logBox;
+        private TextBox serieBox;
         private Label statusLabel;
         private EcranPanel ecran;
 
@@ -258,7 +259,39 @@ namespace EmuWorks
             BuildUi();
             RefreshFirmwares();
             RefreshScripts();
+            ChargerSerie();
             CheckEnvironment();
+        }
+
+        // --- numero de serie --------------------------------------------------
+        private string FichierSerie => Path.Combine(RomDir, "serie.txt");
+
+        private void ChargerSerie()
+        {
+            try
+            {
+                if (File.Exists(FichierSerie)) serieBox.Text = File.ReadAllText(FichierSerie).Trim();
+            }
+            catch (Exception ex) { Log("Lecture de serie.txt : " + ex.Message); }
+        }
+
+        private void EnregistrerSerie()
+        {
+            try
+            {
+                string valeur = serieBox.Text.Trim();
+                if (valeur.Length == 0)
+                {
+                    if (File.Exists(FichierSerie)) File.Delete(FichierSerie);
+                    return;
+                }
+                if (!File.Exists(FichierSerie) || File.ReadAllText(FichierSerie).Trim() != valeur)
+                {
+                    Directory.CreateDirectory(RomDir);
+                    File.WriteAllText(FichierSerie, valeur + Environment.NewLine);
+                }
+            }
+            catch (Exception ex) { Log("Ecriture de serie.txt : " + ex.Message); }
         }
 
         // --- localisation du dossier de travail -----------------------------
@@ -297,6 +330,19 @@ namespace EmuWorks
             };
             installButton = new Button { Text = "Installer", Location = new Point(266, 12), Width = 78 };
             installButton.Click += OnInstallFirmware;
+
+            //  Epsilon ne stocke pas de numero de serie : il encode l'identifiant
+            //  unique du processeur. On le choisit donc librement.
+            var serieLabel = new Label
+            {
+                Text = "Numero de serie :", AutoSize = true, Location = new Point(358, 17)
+            };
+            serieBox = new TextBox
+            {
+                Location = new Point(468, 13), Width = 200, MaxLength = 64,
+                PlaceholderText = "EmuWorks"
+            };
+            serieBox.Leave += (s, e) => EnregistrerSerie();
 
             var scriptsGroup = new GroupBox
             {
@@ -349,7 +395,7 @@ namespace EmuWorks
 
             Controls.AddRange(new Control[]
             {
-                firmwareLabel, firmwareBox, installButton,
+                firmwareLabel, firmwareBox, installButton, serieLabel, serieBox,
                 scriptsGroup, logLabel, logBox, ecran, startButton, statusLabel
             });
         }
@@ -508,7 +554,18 @@ namespace EmuWorks
                 return;
             }
 
+            //  Un Renode oublie garde le port de l'ecran : le nouveau n'arrive
+            //  pas a le prendre, et l'application se connecterait a l'ancien --
+            //  une calculatrice figee, sans message d'erreur.
+            if (PortOccupe())
+            {
+                Log("Le port " + PortEcran + " est deja pris : un emulateur tourne encore ?");
+                Log("Ferme-le (ou termine Renode.exe) avant de redemarrer.");
+                return;
+            }
+
             SauvegarderScripts();
+            EnregistrerSerie();
             startButton.Enabled = false;
             startButton.Text = "Demarrage...";
             Log("Demarrage de la calculatrice...");
@@ -565,6 +622,20 @@ namespace EmuWorks
             SetControlsEnabled(false);
             ecran.Focus();
             Log("Calculatrice demarree. Tape au clavier, l'ecran a le focus.");
+        }
+
+        private static bool PortOccupe()
+        {
+            try
+            {
+                using var essai = new TcpClient();
+                essai.Connect("127.0.0.1", PortEcran);
+                return true;
+            }
+            catch (SocketException)
+            {
+                return false;
+            }
         }
 
         private TcpClient Connecter(int secondes)
@@ -877,6 +948,7 @@ namespace EmuWorks
         {
             installButton.Enabled = valeur;
             firmwareBox.Enabled = valeur;
+            serieBox.Enabled = valeur;
             addButton.Enabled = valeur;
             removeButton.Enabled = valeur;
         }

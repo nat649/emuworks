@@ -23,6 +23,13 @@ sysbus LoadBinary @../rom/internal.bin 0x08000000
 sysbus LoadBinary @../rom/external.bin 0x90000000
 cpu VectorTableOffset 0x08000000
 
+: --- numero de serie -------------------------------------------------------
+:  Epsilon encode en base64 les 96 bits d'identifiant unique du STM32 : le
+:  numero affiche dans Parametres > A propos se choisit donc en ecrivant cet
+:  identifiant. Avant l'amorcage, le firmware le met en cache des la premiere
+:  lecture. Fichier optionnel.
+mem SerialFromFile "rom/serie.txt"
+
 : --- amorcage -------------------------------------------------------------
 :  On laisse Epsilon construire son stockage AVANT d'y ecrire : injecter les
 :  scripts trop tot, ils seraient effaces par l'initialisation.

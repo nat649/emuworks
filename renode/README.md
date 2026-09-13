@@ -121,6 +121,8 @@ Raccourcis pour les zones du N0110 :
 | `mem SaveInternal` / `LoadInternal` | flash interne 64 Ko @ `0x08000000` |
 | `mem AutoSave "<fichier>" <secondes>` | vide la SRAM periodiquement (0 pour arreter) |
 | `mem Save` / `Load` / `AutoSave` / `Shell` (chemins) | un chemin relatif est resolu depuis `EMUWORKS_BASE`, la racine du projet. **Renode ne conserve pas son repertoire de lancement** : sans cette variable un chemin relatif atterrit n'importe ou. L'application et les `.bat` la posent. |
+| `mem SetSerial "<texte>"` | choisit le numero de serie affiche |
+| `mem SerialFromFile "<fichier>"` | idem, depuis un fichier texte (absent = ignore) |
 | `mem Shell "<programme>" "<arguments>"` | lance un outil externe : le moniteur Renode n'a pas d'echappement shell, sans ca le lanceur ne pourrait pas appeler `node` |
 
 ### Scripts Python
@@ -450,6 +452,21 @@ depuis le framebuffer. `lcd StopServing` l'arrete.
 C'est ce qui permet de n'avoir qu'une seule fenetre : Renode est lance sans
 interface et l'application affiche l'ecran elle-meme. Le format RGB565 est celui
 de la dalle, donc `Bitmap` le prend sans conversion (`Format16bppRgb565`).
+
+## Numero de serie
+
+Epsilon **ne stocke aucun numero de serie**. Il encode en base64 les 96 bits
+d'identifiant unique du STM32, lus a `0x1FF07A10`
+(`ion/src/device/shared/drivers/serial_number.cpp`). Douze octets font
+exactement seize caracteres, sans remplissage : n'importe quel texte de seize
+caracteres de l'alphabet base64 (`A-Z a-z 0-9 + /`) est donc un identifiant
+valide, et le numero affiche dans **Parametres > A propos** se choisit
+librement.
+
+`rom/serie.txt` contient ce texte ; il est ecrit dans l'OTP avant l'amorcage,
+car le firmware met le numero en cache des sa premiere lecture. Un texte plus
+court est repete (`EmuWorks` donne `EmuWorksEmuWorks`), les caracteres hors
+alphabet sont ignores.
 
 ## Verifier l'apparence sans ouvrir l'application
 

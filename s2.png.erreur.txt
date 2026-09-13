@@ -1,0 +1,7 @@
+System.IO.FileNotFoundException: Could not find file 'C:\NumWorks\s2.raw'.
+File name: 'C:\NumWorks\s2.raw'
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+   at System.IO.File.ReadAllBytes(String path)
+   at EmuWorks.Program.RendreApercu(String[] args)
+   at EmuWorks.Program.Apercu(String[] args)
