@@ -42,3 +42,5 @@ trace*.txt
 out.txt
 lancement.txt
 emb*.txt
+*.log
+*.erreur.txt
