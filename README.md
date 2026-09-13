@@ -123,5 +123,18 @@ est dans [`renode/README.md`](renode/README.md).
 
 ## Licence
 
-MIT, voir [LICENSE](LICENSE). Ne couvre ni Epsilon (© NumWorks, CC BY-NC-SA
-4.0) ni Renode (© Antmicro, MIT), qui ne sont pas distribués ici.
+Le contenu de ce dépôt — modèles de périphériques Renode, outils, application,
+documentation — est sous licence **MIT**, voir [LICENSE](LICENSE).
+
+Elle ne couvre pas, et ce dépôt ne distribue pas :
+
+| | |
+|---|---|
+| [Epsilon](https://github.com/numworks/epsilon), le firmware NumWorks | © NumWorks — CC BY-NC-SA 4.0 |
+| Omega, son fork communautaire | même licence |
+| [Renode](https://github.com/renode/renode), l'infrastructure d'émulation | © Antmicro — MIT |
+
+Les modèles de périphériques décrivent le matériel du STM32F730 et de la carte
+N0110 : registres, protocole de la dalle ST7789V, câblage de la matrice clavier.
+Ils sont écrits à partir de la documentation du composant et de l'observation du
+comportement du firmware, pas dérivés de son code.
