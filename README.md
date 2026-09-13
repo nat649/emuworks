@@ -1,140 +1,95 @@
 # EmuWorks
 
-**Émulateur de calculatrice NumWorks N0110.** Un émulateur **au niveau du microcontrôleur** : il exécute le vrai code machine
-ARM Cortex-M7 du firmware NumWorks sur un STM32F730 émulé, avec l'écran
-ST7789V sur bus FMC, la matrice clavier 9×6, l'ADC de la batterie et l'unité
-CRC32. Pas une réimplémentation de l'interface — le firmware d'origine, tel
-qu'il tourne sur la calculatrice.
+**NumWorks N0110 calculator emulator.** A **microcontroller-level** emulator: it runs the actual ARM Cortex-M7 machine code of the NumWorks firmware on an emulated STM32F730, along with the ST7789V screen on the FMC bus, the 9×6 keyboard matrix, the battery ADC, and the CRC32 unit. Not a UI reimplementation — the original firmware, exactly as it runs on the calculator.
 
-Le tout dans une seule fenêtre : Renode est lancé sans interface, son écran est
-rapatrié dans l'application par une socket locale.
+All in a single window: Renode is launched headlessly, and its screen is forwarded to the application via a local socket.
 
----
+## ⚠️ This repository contains no firmware
 
-## ⚠️ Ce dépôt ne contient aucun firmware
+Epsilon is published by NumWorks under the **Creative Commons BY-NC-SA 4.0** license (Attribution, NonCommercial, ShareAlike). Redistributing its binaries would impose these conditions on this entire repository, so we do not distribute any — not Epsilon, not Omega, nor the example scripts provided with the calculator.
 
-Epsilon est publié par NumWorks sous licence **Creative Commons BY-NC-SA 4.0**
-(attribution, pas d'usage commercial, partage à l'identique). Redistribuer ses
-binaires imposerait ces conditions à tout ce dépôt, alors on n'en distribue
-aucun — ni Epsilon, ni Omega, ni les scripts d'exemple livrés avec la
-calculatrice.
+**You compile your own**, from the official sources, using the provided GitHub workflow: `renode/build-firmware-n0110.yml`. It takes two minutes, and it produces exactly the two images the emulator loads.
 
-**Tu compiles le tien**, depuis les sources officielles, avec le workflow
-GitHub fourni : `renode/build-firmware-n0110.yml`. Deux minutes, et il produit
-exactement les deux images que l'émulateur charge.
+The code in this repository — peripheral models, tools, application — is original work licensed under MIT. It describes the **hardware** (STM32F730 registers, display protocol, keyboard wiring), not the firmware.
 
-Le code de ce dépôt — modèles de périphériques, outils, application — est du
-travail original sous licence MIT. Il décrit le **matériel** (registres du
-STM32F730, protocole de la dalle, câblage du clavier), pas le firmware.
-
----
-
-## Prérequis
+## Prerequisites
 
 | | |
 |---|---|
 | [Renode](https://renode.io) 1.16 | `winget install Renode.Renode` |
-| [Node.js](https://nodejs.org) | `winget install OpenJS.NodeJS.LTS` — sert à la synchronisation des scripts |
-| .NET Desktop Runtime 8 | pour l'application ; ou `dotnet publish` depuis `app/` |
+| [Node.js](https://nodejs.org) | `winget install OpenJS.NodeJS.LTS` — used for script synchronization |
+| .NET Desktop Runtime 8 | for the application; or `dotnet publish` from `app/` |
 
-> ⚠️ **Installe le dossier sous un chemin sans espaces**, par exemple
-> `C:\EmuWorks\`. Renode 1.16 échoue silencieusement (« Could not tokenize »)
-> sur un chemin qui en contient — c'est le premier piège du projet. L'endroit
-> exact est libre : rien n'est codé en dur, l'application transmet la racine du
-> projet à Renode par la variable `EMUWORKS_BASE`.
+> ⚠️ **Install the folder in a path without spaces**, for example
+> `C:\EmuWorks\`. Renode 1.16 fails silently ("Could not tokenize")
+> on paths containing spaces — this is the project's main pitfall. The exact
+> location is up to you: nothing is hardcoded, the application passes the project
+> root to Renode via the `EMUWORKS_BASE` environment variable.
 
-## Obtenir un firmware
+## Getting a firmware
 
 1. Fork [numworks/epsilon](https://github.com/numworks/epsilon).
-2. Copie `renode/build-firmware-n0110.yml` dans `.github/workflows/` sur la
-   branche par défaut de ton fork.
+2. Copy `renode/build-firmware-n0110.yml` into `.github/workflows/` on your fork's default branch.
 3. Actions → **Firmware N0110 (Renode)** → Run workflow.
-4. Récupère l'artifact et pose les deux images dans
-   `firmwares/<nom>/internal.bin` et `external.bin`.
+4. Download the artifact and place the two images into `firmwares//internal.bin` and `external.bin`.
 
-L'artifact contient deux variantes :
-
-| | |
-|---|---|
-| `epsilon.internal.bin` / `epsilon.external.bin` | démarre directement sur l'accueil |
-| `epsilon.onboarding.*` | avec l'assistant de première utilisation |
-
-La différence est une cible de compilation (`make epsilon.dfu` contre
-`epsilon.onboarding.dfu`), pas un patch. La première est préférable ici :
-l'émulateur repart toujours d'un démarrage à froid, donc l'assistant de langue
-réapparaîtrait à chaque lancement.
-
-Un fork n'héritant pas des tags, le workflow prend un champ `repository` en
-plus de `ref` : laisse `numworks/epsilon` pour compiler l'amont, ou mets ton
-fork et ta branche pour compiler tes propres modifications.
-
-## Utilisation
-
-Lance `EmuWorks.exe`. Une seule fenêtre :
-
-- choix du firmware parmi ceux posés dans `firmwares/` ;
-- gestion des scripts Python : ajouter, supprimer, ouvrir dans ton éditeur ;
-- l'écran de la calculatrice, au clavier de ton PC — agrandi par facteur
-  **entier** (2×, 3×…) pour rester net, et centré dans un cadre ; agrandir la
-  fenêtre agrandit la calculatrice ;
-- enregistrement automatique à l'arrêt.
-
-### Le dossier `rom/` **est** la calculatrice
-
-```
-rom/
-├── internal.bin      flash interne  → 0x08000000
-├── external.bin      flash externe  → 0x90000000
-├── scripts/*.py      les scripts Python, en vrais fichiers texte
-└── serie.txt         le numéro de série affiché par la calculatrice
-```
-
-Au démarrage, les `.py` du dossier sont injectés dans la calculatrice ; à
-l'arrêt, ce qu'elle contient est réécrit dans le dossier. **Le dossier fait
-autorité au démarrage, la calculatrice fait autorité à la fin.** Tu peux donc
-éditer tes scripts dans ton éditeur, les versionner, les partager — ce que
-l'USB de la vraie calculatrice ne permet pas.
-
-L'adresse du stockage est retrouvée à chaque démarrage en cherchant le magic
-`0xEE0BDDBA` dans la SRAM : elle diffère d'un firmware à l'autre, et le dossier
-suit sans rien reconfigurer.
-
-## Comment ça marche
-
-```
-EmuWorks.exe ──stdin──▶ Renode (sans interface)
-     ▲                      │
-     │                      ├── numworks_n0110.repl   la carte
-     └──socket 3555─────────┤   NumWorksDisplay.cs    ST7789V sur bus FMC
-        trame RGB565        │   NumWorksKeyboard.cs   matrice 9×6
-                            │   NumWorksAdc.cs        batterie
-                            │   NumWorksCrc.cs        CRC32 matériel
-                            └── MemFile.cs            mémoire ↔ fichiers
-```
-
-Renode ouvre normalement ses propres fenêtres. Ici il tourne avec
-`--disable-xwt`, piloté par son entrée standard : les touches deviennent des
-commandes du moniteur, et `NumWorksDisplay` sert le framebuffer sur une socket
-locale — un octet de requête, une trame 320×240 RGB565 en réponse.
-
-La documentation technique complète — registres encore bouchonnés, méthode de
-diagnostic d'un firmware qui ne démarre pas, les deux orientations de l'écran —
-est dans [`renode/README.md`](renode/README.md).
-
-## Licence
-
-Le contenu de ce dépôt — modèles de périphériques Renode, outils, application,
-documentation — est sous licence **MIT**, voir [LICENSE](LICENSE).
-
-Elle ne couvre pas, et ce dépôt ne distribue pas :
+The artifact contains two variants:
 
 | | |
 |---|---|
-| [Epsilon](https://github.com/numworks/epsilon), le firmware NumWorks | © NumWorks — CC BY-NC-SA 4.0 |
-| Omega, son fork communautaire | même licence |
-| [Renode](https://github.com/renode/renode), l'infrastructure d'émulation | © Antmicro — MIT |
+| `epsilon.internal.bin` / `epsilon.external.bin` | boots directly to the home screen |
+| `epsilon.onboarding.*` | includes the first-use onboarding wizard |
 
-Les modèles de périphériques décrivent le matériel du STM32F730 et de la carte
-N0110 : registres, protocole de la dalle ST7789V, câblage de la matrice clavier.
-Ils sont écrits à partir de la documentation du composant et de l'observation du
-comportement du firmware, pas dérivés de son code.
+The difference is just a build target (`make epsilon.dfu` vs `epsilon.onboarding.dfu`), not a patch. The first one is preferred here: the emulator always performs a cold boot, so the language wizard would reappear on every launch.
+
+Since a fork does not inherit tags, the workflow takes a `repository` field in addition to `ref`: leave it as `numworks/epsilon` to build upstream, or enter your fork and branch to compile your own modifications.
+
+## Usage
+
+Launch `EmuWorks.exe`. A single window offers:
+
+- firmware selection from those placed in `firmwares/`;
+- Python script management: add, delete, or open them in your editor;
+- the calculator screen, controlled by your PC keyboard — scaled by an **integer** factor (2×, 3×…) to remain crisp, and centered in a frame; resizing the window scales the calculator;
+- automatic saving upon exit.
+
+### The `rom/` folder **is** the calculator
+
+    rom/
+    ├── internal.bin      internal flash → 0x08000000
+    ├── external.bin      external flash → 0x90000000
+    ├── scripts/*.py      Python scripts, as real text files
+    └── serie.txt         the serial number displayed by the calculator
+
+On startup, the `.py` files from the folder are injected into the calculator; on exit, what the calculator contains is written back to the folder. **The folder is the authority on startup, the calculator is the authority on exit.** This means you can edit your scripts in your code editor, version them, and share them — which the real calculator's USB connection does not allow.
+
+The storage address is dynamically found at each boot by searching for the magic number `0xEE0BDDBA` in SRAM: it differs from one firmware to another, and the folder adapts without any reconfiguration.
+
+## How it works
+
+    EmuWorks.exe ──stdin──▶ Renode (headless)
+         ▲                    │
+         │                    ├── numworks_n0110.repl   the board
+         └──socket 3555───────┤   NumWorksDisplay.cs    ST7789V on FMC bus
+            RGB565 frame      │   NumWorksKeyboard.cs   9×6 matrix
+                              │   NumWorksAdc.cs        battery
+                              │   NumWorksCrc.cs        hardware CRC32
+                              └── MemFile.cs            memory ↔ files
+
+Renode normally opens its own windows. Here it runs with `--disable-xwt`, driven via standard input: key presses become monitor commands, and `NumWorksDisplay` serves the framebuffer over a local socket — a request byte, and a 320×240 RGB565 frame in response.
+
+The complete technical documentation — still-stubbed registers, how to diagnose a firmware that fails to boot, the two screen orientations — is in [`renode/README.md`](renode/README.md).
+
+## License
+
+The content of this repository — Renode peripheral models, tools, application, documentation — is licensed under the **MIT** license, see [LICENSE](LICENSE).
+
+It does not cover, and this repository does not distribute:
+
+| | |
+|---|---|
+| [Epsilon](https://github.com/numworks/epsilon), the NumWorks firmware | © NumWorks — CC BY-NC-SA 4.0 |
+| Omega, its community fork | same license |
+| [Renode](https://github.com/renode/renode), the emulation infrastructure | © Antmicro — MIT |
+
+The peripheral models describe the hardware of the STM32F730 and the N0110 board: registers, ST7789V display protocol, keyboard matrix wiring. They are written based on component documentation and observation of the firmware's behavior, not derived from its code.
