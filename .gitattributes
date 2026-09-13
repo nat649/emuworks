@@ -1,0 +1,21 @@
+# Le dépôt stocke du LF ; la copie de travail Windows reçoit ce qu'il lui faut.
+# Sans cette normalisation, git avertit à chaque commit que les fins de ligne
+# vont changer, et un clone sous Linux récupère des CRLF parasites.
+* text=auto eol=lf
+
+# Exception : les scripts de commandes gardent CRLF sur le disque. cmd.exe
+# tolère mal le LF dans un bloc if(...) ou for(...) multiligne — il exécute la
+# première ligne puis se perd.
+*.bat text eol=crlf
+
+# Les scripts Renode et le Markdown sont lus par des outils indifférents aux
+# fins de ligne : LF partout.
+*.resc text eol=lf
+*.repl text eol=lf
+*.md   text eol=lf
+
+*.png binary
+*.bin binary
+*.dfu binary
+*.elf binary
+*.raw binary
