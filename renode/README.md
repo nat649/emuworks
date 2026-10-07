@@ -453,6 +453,13 @@ C'est ce qui permet de n'avoir qu'une seule fenetre : Renode est lance sans
 interface et l'application affiche l'ecran elle-meme. Le format RGB565 est celui
 de la dalle, donc `Bitmap` le prend sans conversion (`Format16bppRgb565`).
 
+## Variables d'environnement
+
+| | |
+|---|---|
+| `EMUWORKS_BASE` | racine du projet, posee par l'application et les `.bat`. `MemFile` y resout ses chemins relatifs : **Renode ne conserve pas son repertoire de lancement**. |
+| `RENODE_EXE` | chemin complet de `Renode.exe`, si l'installation n'est pas a un endroit habituel. Sinon l'application cherche dans le `PATH`, puis dans `Program Files`, `Program Files (x86)` et `%LOCALAPPDATA%`. |
+
 ## Numero de serie
 
 Epsilon **ne stocke aucun numero de serie**. Il encode en base64 les 96 bits

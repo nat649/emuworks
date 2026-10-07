@@ -227,8 +227,53 @@ namespace EmuWorks
 
     public class MainForm : Form
     {
-        private const string RenodeExe = @"C:\Program Files\Renode\bin\Renode.exe";
         private const int PortEcran = 3555;
+        private const int PeriodeImageMs = 33;      // ~30 images par seconde
+        private const int DelaiArretMs = 8000;      // avant de terminer Renode de force
+
+        //  Emplacement de Renode : la variable RENODE_EXE l'emporte, puis le
+        //  PATH, puis les installations habituelles. Le depot est public, tout
+        //  le monde ne l'a pas au meme endroit.
+        private static readonly string RenodeExe = TrouverRenode();
+
+        private static string TrouverRenode()
+        {
+            string impose = Environment.GetEnvironmentVariable("RENODE_EXE");
+            if (!string.IsNullOrEmpty(impose) && File.Exists(impose)) return impose;
+
+            foreach (var dossier in (Environment.GetEnvironmentVariable("PATH") ?? "")
+                                        .Split(Path.PathSeparator))
+            {
+                if (dossier.Length == 0) continue;
+                try
+                {
+                    string essai = Path.Combine(dossier, "Renode.exe");
+                    if (File.Exists(essai)) return essai;
+                }
+                catch (ArgumentException)
+                {
+                    // entree de PATH mal formee : on passe a la suivante
+                }
+            }
+
+            string[] racines =
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+            };
+            foreach (var racine in racines)
+            {
+                if (string.IsNullOrEmpty(racine)) continue;
+                string essai = Path.Combine(racine, "Renode", "bin", "Renode.exe");
+                if (File.Exists(essai)) return essai;
+            }
+
+            //  Introuvable : on rend le chemin attendu, pour que le message
+            //  d'erreur dise ou l'application a cherche.
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                                "Renode", "bin", "Renode.exe");
+        }
 
         private readonly string baseDir;
         private string RomDir => Path.Combine(baseDir, "rom");
@@ -405,8 +450,10 @@ namespace EmuWorks
             statusLabel.Text = baseDir;
             if (!File.Exists(RenodeExe))
             {
-                Log("Renode introuvable : " + RenodeExe);
+                Log("Renode introuvable. Cherche dans RENODE_EXE, le PATH, puis :");
+                Log("  " + RenodeExe);
                 Log("Installe-le avec :  winget install Renode.Renode");
+                Log("Ou pose son chemin dans la variable RENODE_EXE.");
                 startButton.Enabled = false;
             }
             if (!Directory.Exists(RomDir))
@@ -424,8 +471,14 @@ namespace EmuWorks
             }
             if (baseDir.Contains(' '))
             {
-                Log("ATTENTION : le chemin contient un espace. Renode 1.16 ne sait pas");
-                Log("les lire (\"Could not tokenize\"). Remets tout sous C:\\NumWorks.");
+                //  Renode 1.16 echoue sur un chemin a espaces (« Could not
+                //  tokenize ») sans rien expliquer. Laisser demarrer ne
+                //  produirait qu'une panne incomprehensible : on bloque.
+                Log("Le chemin du projet contient un espace :");
+                Log("  " + baseDir);
+                Log("Renode 1.16 ne sait pas les lire (\"Could not tokenize\").");
+                Log("Deplace le dossier vers un chemin sans espace, par exemple C:\\EmuWorks.");
+                startButton.Enabled = false;
             }
         }
 
@@ -462,6 +515,18 @@ namespace EmuWorks
             if (firmwareBox.SelectedItem == null) return;
             string nom = firmwareBox.SelectedItem.ToString();
             string src = Path.Combine(FirmwaresDir, nom);
+
+            //  Les deux images vont ensemble : en copier une seule laisserait
+            //  rom\ dans un etat incoherent, moitie ancien firmware moitie
+            //  nouveau, et la calculatrice ne demarrerait pas.
+            foreach (var image in new[] { "internal.bin", "external.bin" })
+            {
+                if (File.Exists(Path.Combine(src, image))) continue;
+                Log(nom + " est incomplet : " + image + " manque.");
+                Log("Un firmware a besoin des deux images, internal.bin et external.bin.");
+                return;
+            }
+
             try
             {
                 File.Copy(Path.Combine(src, "internal.bin"), Path.Combine(RomDir, "internal.bin"), true);
@@ -665,13 +730,21 @@ namespace EmuWorks
         private void BoucleImages()
         {
             int taille = EcranPanel.LargeurEcran * EcranPanel.HauteurEcran * 2;
-            byte[] trame = new byte[taille];
+            //  Deux tampons en alternance. Le fil interface lit celui qu'on
+            //  vient de lui passer pendant qu'on remplit l'autre : sans ce
+            //  decouplage il faudrait copier chaque trame, et avec un tampon
+            //  unique il verrait une image a moitie remplacee.
+            byte[][] tampons = { new byte[taille], new byte[taille] };
+            int courant = 0;
             var demande = new byte[] { 1 };
             try
             {
                 var flux = socket.GetStream();
                 while (enMarche)
                 {
+                    byte[] trame = tampons[courant];
+                    courant = 1 - courant;
+
                     flux.Write(demande, 0, 1);
                     int lu = 0;
                     while (lu < taille)
@@ -680,29 +753,46 @@ namespace EmuWorks
                         if (n <= 0) return;
                         lu += n;
                     }
-                    byte[] copie = (byte[])trame.Clone();
-                    if (!IsHandleCreated) return;
-                    BeginInvoke(new Action(() =>
-                    {
-                        try
-                        {
-                            ecran.Afficher(copie);
-                        }
-                        catch (Exception ex)
-                        {
-                            // Une exception sur le fil interface tuerait
-                            // l'application : mieux vaut un ecran fige et un
-                            // message que la fenetre qui disparait.
-                            enMarche = false;
-                            Log("Affichage impossible : " + ex.Message);
-                        }
-                    }));
-                    Thread.Sleep(33);
+                    if (!Afficher(trame)) return;
+                    Thread.Sleep(PeriodeImageMs);
                 }
+            }
+            catch (Exception ex)
+            {
+                //  A l'arret on ferme la socket sous les pieds de ce fil : la
+                //  levee est alors normale. Autrement, elle compte.
+                if (enMarche) Log("Flux d'images interrompu : " + ex.Message);
+            }
+        }
+
+        //  Rend false quand il n'y a plus de fenetre a qui parler.
+        private bool Afficher(byte[] trame)
+        {
+            if (!IsHandleCreated || IsDisposed) return false;
+            try
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        ecran.Afficher(trame);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Une exception sur le fil interface tuerait
+                        // l'application : mieux vaut un ecran fige et un
+                        // message que la fenetre qui disparait.
+                        enMarche = false;
+                        Log("Affichage impossible : " + ex.Message);
+                    }
+                }));
+                return true;
             }
             catch (Exception)
             {
-                // socket fermee a l'arret : rien a signaler
+                //  Fenetre fermee entre le test et l'appel : course inevitable,
+                //  et sans consequence puisqu'on s'arrete.
+                return false;
             }
         }
 
@@ -712,26 +802,35 @@ namespace EmuWorks
             startButton.Text = "Arret...";
             enMarche = false;
 
-            try { socket?.Close(); } catch { }
+            //  Fermer la socket est ce qui debloque le fil d'images, arrete sur
+            //  un Read. Une levee ici signifie qu'elle l'etait deja.
+            try { socket?.Close(); } catch (Exception) { }
             socket = null;
 
-            if (renode != null && !renode.HasExited)
+            if (renode != null)
             {
-                try
+                if (!renode.HasExited)
                 {
-                    renode.StandardInput.WriteLine("quit");
-                    renode.StandardInput.Flush();
-                }
-                catch { }
-                await Task.Run(() =>
-                {
-                    if (!renode.WaitForExit(8000))
+                    try
                     {
-                        try { renode.Kill(true); } catch { }
+                        renode.StandardInput.WriteLine("quit");
+                        renode.StandardInput.Flush();
                     }
-                });
+                    catch (Exception ex)
+                    {
+                        Log("Renode ne recoit plus de commandes : " + ex.Message);
+                    }
+                    await Task.Run(() =>
+                    {
+                        if (renode.WaitForExit(DelaiArretMs)) return;
+                        Log("Renode ne s'arrete pas, on le termine.");
+                        try { renode.Kill(true); }
+                        catch (Exception ex) { Log("Arret force impossible : " + ex.Message); }
+                    });
+                }
+                renode.Dispose();
+                renode = null;
             }
-            renode = null;
             touchesEnfoncees.Clear();
 
             ecran.Allume = false;
