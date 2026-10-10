@@ -12,4 +12,9 @@
     <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="../firmware/core/bundled/internal.bin" LogicalName="Core.internal.bin" />
+    <EmbeddedResource Include="../firmware/core/bundled/external.bin" LogicalName="Core.external.bin" />
+  </ItemGroup>
+
 </Project>

@@ -291,6 +291,7 @@ namespace EmuWorks
         private string RomTool => Path.Combine(RenodeDir, "tools", "rom.js");
 
         private ComboBox firmwareBox;
+        private GroupBox scriptsGroup;
         private Button installButton, importButton, restoreButton;
         private ListBox scriptList;
         private Button addButton, removeButton, folderButton;
@@ -311,6 +312,7 @@ namespace EmuWorks
         private readonly System.Windows.Forms.Timer imageTimer = new System.Windows.Forms.Timer { Interval = PeriodeImageMs };
         private string sessionDump;
         private bool sessionReady, closing, closeAllowed;
+        private bool coreSession;
         private FileStream sessionLease;
         private const int StartupTimeoutSeconds = 60;
         private const int FrameTimeoutSeconds = 10;
@@ -320,12 +322,18 @@ namespace EmuWorks
         {
             baseDir = ResolveBaseDir();
             BuildUi();
+            try
+            {
+                using var lease = AcquireLease();
+                FirmwareStore.Recover(RomDir);
+                CoreFirmware.PrepareLibrary(baseDir);
+            }
+            catch (Exception ex) { Log("Preparation du firmware : " + ex.Message); }
             RefreshFirmwares();
             RefreshScripts();
             ChargerSerie();
-            try { using var lease = AcquireLease(); FirmwareStore.Recover(RomDir); }
-            catch (Exception ex) { Log("Recuperation du firmware : " + ex.Message); }
             imageTimer.Tick += (s, e) => RenderLatestFrame();
+            SetControlsEnabled(true);
             CheckEnvironment();
         }
 
@@ -369,6 +377,7 @@ namespace EmuWorks
             string configured = Environment.GetEnvironmentVariable("EMUWORKS_BASE");
             if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
             string here = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            if (Directory.Exists(Path.Combine(here, "renode"))) return here;
             if (Directory.Exists(Path.Combine(here, "rom"))) return here;
             string parent = Path.GetDirectoryName(here);
             if (parent != null && Directory.Exists(Path.Combine(parent, "rom"))) return parent;
@@ -414,7 +423,7 @@ namespace EmuWorks
             };
             serieBox.Leave += (s, e) => EnregistrerSerie();
 
-            var scriptsGroup = new GroupBox
+            scriptsGroup = new GroupBox
             {
                 Text = "Scripts Python", Location = new Point(14, 48), Size = new Size(330, 330)
             };
@@ -491,8 +500,8 @@ namespace EmuWorks
             else if (!File.Exists(Path.Combine(RomDir, "internal.bin")))
             {
                 Log("Aucun firmware dans rom\\.");
-                Log("Aucun firmware n'est distribue avec ce depot :");
-                Log("importe tes images avec le bouton Importer un firmware.");
+                Log("Choisis emuworks-core-0.1 puis Installer pour utiliser le firmware libre integre.");
+                Log("Tu peux aussi importer tes propres images avec Importer un firmware.");
                 Log("Compile le tien avec renode\\build-firmware-n0110.yml, puis pose");
                 Log("les deux images dans firmwares\\<nom>\\ et clique Installer.");
             }
@@ -560,6 +569,9 @@ namespace EmuWorks
                 FirmwareStore.Install(inside, outside, RomDir);
                 Log("Firmware installe. Les tailles et la table de demarrage ont ete verifiees.");
                 RefreshFirmwares();
+                SetControlsEnabled(true);
+                if (CoreFirmware.IsCore(Path.Combine(RomDir, "internal.bin")))
+                    Log("EmuWorks Core : calculatrice de base, sans Python. Historique conserve pendant la session.");
                 startButton.Enabled = true;
                 CheckEnvironment();
             }
@@ -709,13 +721,14 @@ namespace EmuWorks
                 sessionLease = AcquireLease();
                 FirmwareStore.Recover(RomDir);
                 FirmwareStore.Validate(Path.Combine(RomDir, "internal.bin"), Path.Combine(RomDir, "external.bin"));
+                coreSession = CoreFirmware.IsCore(Path.Combine(RomDir, "internal.bin"));
                 if (IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(p => p.Port == PortEcran))
                     throw new IOException("Le port " + PortEcran + " est deja utilise. Ferme l'autre emulateur.");
 
                 var token = session.Token;
                 SetControlsEnabled(false);
                 startButton.Text = "Annuler le demarrage";
-                if (!await RunTool("backup", RomDir)) throw new IOException("La sauvegarde des scripts a echoue. Demarrage annule.");
+                if (!coreSession && !await RunTool("backup", RomDir)) throw new IOException("La sauvegarde des scripts a echoue. Demarrage annule.");
                 token.ThrowIfCancellationRequested();
                 EnregistrerSerie();
                 string sessions = Path.Combine(RomDir, ".sessions");
@@ -723,8 +736,9 @@ namespace EmuWorks
                 sessionDump = Path.Combine(sessions, Guid.NewGuid().ToString("N") + ".bin");
                 sessionReady = false;
 
+                string bootScript = coreSession ? "emuworks-core.resc" : "numworks-embarque.resc";
                 var info = new ProcessStartInfo(RenodeExe,
-                    "--console --disable-xwt --hide-log -e \"i @numworks-embarque.resc\"")
+                    "--console --disable-xwt --hide-log -e \"i @" + bootScript + "\"")
                 {
                     WorkingDirectory = RenodeDir, UseShellExecute = false, CreateNoWindow = true,
                     RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
@@ -853,7 +867,7 @@ namespace EmuWorks
                     if (!renode.HasExited)
                     {
                         // Pause avant le dernier vidage : le firmware ne modifie plus les records.
-                        if (sessionReady)
+                        if (sessionReady && !coreSession)
                         {
                             Commande("pause");
                             Commande("mem SaveSram \"" + sessionDump.Replace('\\', '/') + "\"");
@@ -871,7 +885,8 @@ namespace EmuWorks
                     }
                     renode.Dispose(); renode = null;
                 }
-                if (sessionReady && File.Exists(sessionDump))
+                if (coreSession) Log("EmuWorks Core arrete. Son historique sera remis a zero au prochain demarrage.");
+                else if (sessionReady && File.Exists(sessionDump))
                 {
                     if (!await RunTool("pull", sessionDump, RomDir))
                         Log("Import refuse : les scripts precedents sont conserves. Vidage : " + sessionDump);
@@ -1078,15 +1093,17 @@ namespace EmuWorks
 
         private void SetControlsEnabled(bool valeur)
         {
+            bool python = !CoreFirmware.IsCore(Path.Combine(RomDir, "internal.bin"));
+            scriptsGroup.Text = python ? "Scripts Python" : "Python indisponible dans Core 0.1";
             installButton.Enabled = valeur;
             importButton.Enabled = valeur;
-            restoreButton.Enabled = valeur;
-            scriptList.Enabled = valeur;
-            folderButton.Enabled = valeur;
+            restoreButton.Enabled = valeur && python;
+            scriptList.Enabled = valeur && python;
+            folderButton.Enabled = valeur && python;
             firmwareBox.Enabled = valeur;
-            serieBox.Enabled = valeur;
-            addButton.Enabled = valeur;
-            removeButton.Enabled = valeur;
+            serieBox.Enabled = valeur && python;
+            addButton.Enabled = valeur && python;
+            removeButton.Enabled = valeur && python;
         }
 
         private void Post(Action action)

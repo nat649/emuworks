@@ -1,5 +1,9 @@
 # Sauvegardes, import et fermeture
 
+**EmuWorks Core 0.1** est le firmware original intégré. Son historique dure la
+session et il ne possède pas Python : les sauvegardes de scripts décrites ici
+concernent Epsilon/Omega compatibles. Passer à Core ne supprime pas les scripts.
+
 ## Dans l'application
 
 - **Importer un firmware…** : choisir l'image interne puis l'image externe du même build N0110. Les noms `epsilon.internal.bin` et `epsilon.external.bin` sont acceptés. Les fichiers DFU/ELF doivent d'abord être extraits. L'import contrôle les tailles et la table de démarrage ARM ; cela ne garantit pas la compatibilité de tous les firmwares. Aucun firmware n'est téléchargé ou distribué par l'application.

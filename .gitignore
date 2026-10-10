@@ -3,8 +3,8 @@
 # ============================================================================
 #  Epsilon est publie par NumWorks sous licence Creative Commons
 #  BY-NC-SA 4.0 (attribution, pas d'usage commercial, partage a l'identique).
-#  On ne redistribue donc aucun binaire de firmware : chacun compile le sien
-#  depuis les sources officielles avec renode/build-firmware-n0110.yml.
+#  Les firmwares tiers restent exclus. Seules les deux images originales MIT
+#  d'EmuWorks Core ont une exception explicite ci-dessous.
 #
 #  L'emulateur lui-meme (modeles de peripheriques, outils, application) est du
 #  code original : voir LICENSE.
@@ -15,6 +15,9 @@
 *.dfu
 *.elf
 *.hex
+!firmware/core/bundled/internal.bin
+!firmware/core/bundled/external.bin
+firmware/core/build/
 firmwares/
 epsilon-officiel/
 

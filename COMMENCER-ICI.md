@@ -1,87 +1,44 @@
 # EmuWorks — commencer ici
 
-Émulateur **au niveau de la puce** : il exécute le vrai code machine ARM du
-firmware NumWorks sur un STM32F730 émulé. Écran, clavier, scripts Python,
-batterie — tout marche.
+Lance `EmuWorks.exe` depuis un dossier sans espace, par exemple `C:\NumWorks`.
+Renode reste invisible ; l’écran et les commandes sont réunis dans l’application.
 
-## Démarrer
+## Firmware libre intégré
 
-```
-C:\EmuWorks\EmuWorks.exe
-```
+**EmuWorks Core 0.1** est inclus dans l’exécutable, avec ses sources sous MIT.
+Sur une installation neuve, il est installé automatiquement. Si tu utilises déjà
+Epsilon ou Omega, sélectionne **emuworks-core-0.1**, puis **Installer** et **Démarrer**.
+Tes scripts Python restent dans leur dossier lorsque tu utilises Core.
 
-Une seule application, rien à taper. Elle réunit ce qui était éparpillé dans huit
-fichiers `.bat` et dans des commandes tapées à la main :
+Cette première version propose les quatre opérations, décimales, parenthèses,
+puissances entières, ANS et huit calculs d’historique. Elle affiche six chiffres
+significatifs. L’historique est remis à zéro au redémarrage. Python et les
+fonctions scientifiques avancées ne sont pas encore inclus.
 
-- choisir le firmware dans une liste ;
-- ajouter, supprimer, ouvrir des scripts Python ;
-- **voir l'écran de la calculatrice dans la fenêtre même**, au clavier du PC ;
-- récupérer automatiquement son contenu à l'arrêt.
+- **Entrée** : calculer.
+- **Échap** : vider la saisie ; retour arrière : supprimer un caractère.
+- **Gauche/droite** : déplacer le curseur.
+- **Haut/bas** : rappeler un calcul.
+- **A** : insérer ANS pour réutiliser le dernier résultat.
 
-Aucune fenêtre Renode n'apparaît : il tourne sans interface, son écran est
-rapatrié ici par une socket locale.
+Renode et .NET Desktop Runtime 8 restent nécessaires. Node.js n’est pas nécessaire
+pour Core ; il sert à la synchronisation Python des firmwares externes.
 
-⚠️ **Le chemin ne doit contenir aucun espace.** Renode 1.16 ne sait pas les lire
-(« Could not tokenize »). L'emplacement exact est libre : rien n'est codé en
-dur. La copie posée sur le Bureau est une **archive**, pas un dossier
-d'exécution — son chemin contient des espaces.
+## Epsilon ou Omega, en option
 
-## Structure
+Le bouton **Importer un firmware** demande les deux images binaires d’un même
+build N0110 : l’interne puis l’externe. Les firmwares tiers ne sont pas distribués
+avec le dépôt. Tu peux revenir à l’un d’eux via la bibliothèque de firmwares.
 
-```
-C:\EmuWorks\
-├── EmuWorks.exe      <- l'application
-├── README.md         <- la page d'accueil du dépôt GitHub
-├── LICENSE           <- MIT (ton code) ; Epsilon n'est PAS distribué
-├── .gitignore        <- tient les firmwares hors du dépôt
-│
-├── rom\              <- LA CALCULATRICE
-│   ├── internal.bin      flash interne  0x08000000
-│   ├── external.bin      flash externe  0x90000000
-│   └── scripts\*.py      tes scripts, en vrais fichiers texte
-│
-├── firmwares\        <- la bibliothèque de firmwares
-│   ├── epsilon-15.5.0\             Epsilon officiel (démarre sur l'accueil)
-│   ├── epsilon-15.5.0-assistant\   idem, avec l'assistant de langue
-│   └── omega-2.0.2\                fork communautaire
-│
-├── renode\           <- l'émulateur
-│   ├── numworks_n0110.repl   description matérielle du STM32F730
-│   ├── NumWorks*.cs          écran ST7789, clavier 9×6, CRC32, ADC, mémoire
-│   ├── numworks.resc         script de lancement
-│   ├── tools\                outils Node (scripts, PNG, symboles ELF)
-│   ├── build-firmware-n0110.yml   workflow GitHub de compilation
-│   └── README.md             **la documentation complète**
-│
-├── app\              <- sources C# de l'application
-├── ligne-de-commande\ <- les anciens .bat, toujours fonctionnels
-└── web\              <- réplique web (aucune installation, mais pas de vrai firmware)
-```
+Avec un firmware compatible Python, le bouton **Restaurer une sauvegarde** permet
+de choisir une version dans `rom/sauvegardes/`. Voir [les sauvegardes](docs/fiabilite.md).
 
-## Compiler son propre firmware
+## Sources et publication
 
-Possible et documenté — section **« Compiler ton propre firmware »** de
-`renode\README.md` — mais aucun firmware modifié n'est livré ici : `firmwares\`
-ne contient que des versions d'origine.
+Les sources et les deux petits binaires **originaux** de Core sont dans
+[firmware/core](firmware/core/README.md). L’application les embarque à la compilation.
+Le dépôt exclut toujours les firmwares tiers et les données de ta calculatrice.
+La licence MIT est fournie dans `LICENSE` ; les éventuels composants tiers
+conservent leurs propres licences.
 
-## Publier sur GitHub
-
-Le dossier est déjà un dépôt git prêt à partir. `.gitignore` exclut tout ce qui
-poserait un problème de droits : les firmwares (`*.bin`, `*.dfu`, `*.elf`,
-`firmwares\`), les scripts d'exemple de la calculatrice, et les artefacts de
-compilation. Epsilon est sous licence **CC BY-NC-SA 4.0** — clause
-NonCommercial et partage à l'identique — donc on n'en redistribue aucun binaire ;
-`renode\build-firmware-n0110.yml` permet à chacun de compiler le sien.
-
-38 fichiers, aucun binaire. Pour publier :
-
-```bash
-git commit -m "Emulateur NumWorks N0110"
-gh repo create emulateur-numworks --public --source=. --push
-```
-
-## Si quelque chose cloche
-
-`renode\README.md` contient l'inventaire de ce qui est modélisé, la liste des
-registres encore bouchonnés avec leur raison, et la méthode pour diagnostiquer un
-firmware qui ne démarre pas.
+Documentation matérielle et diagnostic : [renode/README.md](renode/README.md).

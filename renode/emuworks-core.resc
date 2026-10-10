@@ -1,0 +1,15 @@
+: Firmware EmuWorks Core original - aucune synchronisation Ion/Python.
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+mach add "core"
+mach set "core"
+machine LoadPlatformDescription @numworks_n0110.repl
+sysbus LoadBinary @../rom/internal.bin 0x08000000
+sysbus LoadBinary @../rom/external.bin 0x90000000
+cpu VectorTableOffset 0x08000000
+emulation RunFor "0.1"
+lcd Serve 3555
+start

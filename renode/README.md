@@ -7,11 +7,11 @@ ARM Cortex-M7 du firmware NumWorks sur un STM32F730 émulé. Écran et clavier
 fonctionnels. Tu peux charger le firmware que tu veux (Epsilon, Omega, Upsilon,
 ton propre fork).
 
-Le firmware **fourni ici est Omega 2.0.2**, un fork communautaire basé sur Epsilon
-15.5.0 — et non Epsilon officiel, que NumWorks ne publie pas en téléchargement.
-Ses drivers bas niveau sont ceux d'Epsilon 15.5.0, d'où le calage de cet émulateur ;
-sa couche applicative est propre à Omega (barre « OMEGA », app RPN, apps en plus).
-Pour faire tourner Epsilon officiel, compile-le avec `build-firmware-n0110.yml`.
+Le firmware intégré est désormais **EmuWorks Core 0.1**, original et sous MIT :
+voir [ses sources et limites](../firmware/core/README.md). Epsilon et Omega restent
+des choix externes, fournis par l'utilisateur. Les procédures de synchronisation
+Ion/Python décrites ci-dessous concernent ces firmwares, pas Core.
+Core utilise `emuworks-core.resc` et démarre sans Node ni import de scripts.
 
 ⚠️ **Ne déplace pas ce dossier vers un chemin contenant des espaces.**
 Renode 1.16 ne sait pas les lire (« Could not tokenize »). D'où `C:\EmuWorks\`.

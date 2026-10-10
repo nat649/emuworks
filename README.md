@@ -4,20 +4,20 @@
 
 All in a single window: Renode is launched headlessly, and its screen is forwarded to the application via a local socket.
 
-## ⚠️ This repository contains no firmware
+## Built-in firmware: EmuWorks Core
 
-Epsilon is published by NumWorks under the **Creative Commons BY-NC-SA 4.0** license (Attribution, NonCommercial, ShareAlike). Redistributing its binaries would impose these conditions on this entire repository, so we do not distribute any — not Epsilon, not Omega, nor the example scripts provided with the calculator.
+**EmuWorks Core 0.1** is our original MIT-licensed ARM firmware, included in the application. It provides basic arithmetic, decimals, parentheses, integer powers, `ANS` and an eight-entry session history. It runs on the emulated Cortex-M7, using the LCD bus and GPIO keyboard. Its code and hand-drawn bitmap glyphs are in [firmware/core](firmware/core/README.md).
 
-**You compile your own**, from the official sources, using the provided GitHub workflow: `renode/build-firmware-n0110.yml`. It takes two minutes, and it produces exactly the two images the emulator loads.
+Choose **emuworks-core-0.1 → Installer → Demarrer**. Core is installed automatically on a fresh installation; existing user firmware is preserved. This first version displays six significant digits and does not include Python, graphing or persistent history. No Epsilon/Omega code or assets are included in Core.
 
-The code in this repository — peripheral models, tools, application — is original work licensed under MIT. It describes the **hardware** (STM32F730 registers, display protocol, keyboard wiring), not the firmware.
+**Third-party firmware is not bundled.** To use Epsilon or Omega, supply your own matching internal/external images. The workflow `renode/build-firmware-n0110.yml` can compile Epsilon from its sources. Third-party firmware retains its own license; the project's MIT license does not relicense it.
 
 ## Prerequisites
 
 | | |
 |---|---|
 | [Renode](https://renode.io) 1.16 | `winget install Renode.Renode` |
-| [Node.js](https://nodejs.org) | `winget install OpenJS.NodeJS.LTS` — used for script synchronization |
+| [Node.js](https://nodejs.org) | optional for Core; required for Python-script synchronization with Epsilon/Omega |
 | .NET Desktop Runtime 8 | for the application; or `dotnet publish` from `app/` |
 
 > ⚠️ **Install the folder in a path without spaces**, for example
@@ -26,7 +26,7 @@ The code in this repository — peripheral models, tools, application — is ori
 > location is up to you: nothing is hardcoded, the application passes the project
 > root to Renode via the `EMUWORKS_BASE` environment variable.
 
-## Getting a firmware
+## Optional: using third-party firmware
 
 1. Fork [numworks/epsilon](https://github.com/numworks/epsilon).
 2. Copy `renode/build-firmware-n0110.yml` into `.github/workflows/` on your fork's default branch.
@@ -48,7 +48,7 @@ Since a fork does not inherit tags, the workflow takes a `repository` field in a
 
 Launch `EmuWorks.exe`. A single window offers:
 
-- firmware selection from those placed in `firmwares/`;
+- built-in EmuWorks Core, plus firmware selection/import from your own images;
 - Python script management: add, delete, or open them in your editor;
 - the calculator screen, controlled by your PC keyboard — scaled by an **integer** factor (2×, 3×…) to remain crisp, and centered in a frame; resizing the window scales the calculator;
 - automatic saving upon exit.
@@ -82,7 +82,7 @@ The complete technical documentation — still-stubbed registers, how to diagnos
 
 ## License
 
-The content of this repository — Renode peripheral models, tools, application, documentation — is licensed under the **MIT** license, see [LICENSE](LICENSE).
+The content of this repository — original EmuWorks Core firmware, Renode peripheral models, tools, application, documentation — is licensed under the **MIT** license, see [LICENSE](LICENSE).
 
 It does not cover, and this repository does not distribute:
 
@@ -98,4 +98,4 @@ The peripheral models describe the hardware of the STM32F730 and the N0110 board
 
 The application now includes **Importer un firmware...** (select the internal and external images from the same N0110 build) and **Restaurer une sauvegarde...**. Script versions are stored under `rom/sauvegardes/`, with SHA-256 integrity checks. Shutdown pauses the machine before the last memory dump; cancelled startup never imports an older session's memory. A forced shutdown may recover an earlier periodic save.
 
-See [backup, recovery and testing instructions](docs/fiabilite.md). These backups cover Python scripts, not a complete calculator snapshot. Firmware remains supplied separately by the user.
+See [backup, recovery and testing instructions](docs/fiabilite.md). These backups cover Python scripts with compatible external firmware, not a complete calculator snapshot. Core does not use Python storage; its history lasts for the current session only.

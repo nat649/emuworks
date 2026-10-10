@@ -85,6 +85,22 @@ internal static class Tests
                         await Call(form, "Arreter").WaitAsync(TimeSpan.FromSeconds(18));
                         Check(Field(form, "renode") == null, "Processus bloque non libere");
                     });
+                    await Case("Core integre demarre sans Node et conserve les scripts", async () =>
+                    {
+                        string library = Path.Combine(root, "firmwares", CoreFirmware.LibraryName);
+                        FirmwareStore.Install(Path.Combine(library, "internal.bin"), Path.Combine(library, "external.bin"), rom);
+                        string oldPath = Environment.GetEnvironmentVariable("PATH");
+                        try
+                        {
+                            Environment.SetEnvironmentVariable("PATH", "");
+                            Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "normal");
+                            await Call(form, "Demarrer").WaitAsync(TimeSpan.FromSeconds(15));
+                            Check((bool)Field(form, "enMarche") && (bool)Field(form, "coreSession"), "Core non reconnu");
+                            await Call(form, "Arreter");
+                            Check(File.ReadAllText(Path.Combine(rom, "scripts/keep.py")).Contains("keep"), "Scripts touches par Core");
+                        }
+                        finally { Environment.SetEnvironmentVariable("PATH", oldPath); MakeFirmware(rom, 0x08000009); }
+                    });
                     await Case("fermeture de fenetre pendant connexion", async () =>
                     {
                         Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "silent");
@@ -127,6 +143,15 @@ internal static class Tests
     }
     static void FirmwareTests()
     {
+        string fresh = Path.Combine(root, "fresh");
+        CoreFirmware.PrepareLibrary(fresh);
+        string freshRom = Path.Combine(fresh, "rom");
+        Check(CoreFirmware.IsCore(Path.Combine(freshRom, "internal.bin")), "Firmware integre absent sur installation neuve");
+        FirmwareStore.Validate(Path.Combine(freshRom, "internal.bin"), Path.Combine(freshRom, "external.bin"));
+        MakeFirmware(freshRom, 0x08000009);
+        CoreFirmware.PrepareLibrary(fresh);
+        Check(!CoreFirmware.IsCore(Path.Combine(freshRom, "internal.bin")), "Firmware utilisateur remplace par Core");
+        Console.WriteLine("PASS installation Core neuve et preservation firmware existant");
         string a = Path.Combine(root, "a"), b = Path.Combine(root, "b");
         MakeFirmware(a, 0x08000009); MakeFirmware(b, 0x00200009);
         FirmwareStore.Install(Path.Combine(a, "internal.bin"), Path.Combine(a, "external.bin"), b);
