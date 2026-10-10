@@ -1,6 +1,6 @@
 # Windows release
 
-Download `EmuWorks-v0.1.0-win-x64.zip` from the [GitHub releases page](https://github.com/nat649/emuworks/releases).
+Download `EmuWorks-v0.1.1-win-x64.zip` from the [GitHub releases page](https://github.com/nat649/emuworks/releases).
 
 1. Install Renode 1.16. On Windows, you can use `winget install Renode.Renode`.
    **For external Epsilon, Omega or Upsilon firmware, install [Node.js LTS for Windows](https://nodejs.org/en/download) as well.** Keep **Add to PATH** enabled and verify `node --version` in a new terminal. Restart EmuWorks after installing Node.js.
@@ -13,6 +13,8 @@ Core provides arithmetic, parentheses, integer powers, `ANS`, and session histor
 Renode runs in the background. If the application cannot find it, set `RENODE_EXE` to your `Renode.exe` path before launching.
 
 Epsilon, Omega and Upsilon are not included. To use your own compatible firmware, import its matching internal/external images. **Node.js is required for backups and Python-script synchronization with these external firmwares.** The included Core and Code firmwares run without a desktop Python or Node.js installation.
+
+Version 0.1.1 saves imported images in the firmware library and selects their entry automatically. It also supports Upsilon's 64,000-byte script-storage layout. Reimporting the same firmware reuses the existing library entry.
 
 ## External firmware troubleshooting
 
@@ -31,7 +33,7 @@ Stop EmuWorks before updating its files. Preserve your existing `rom/` and `firm
 Compare the archive's SHA-256 hash with `SHA256SUMS.txt` from the same release:
 
 ```powershell
-Get-FileHash .\EmuWorks-v0.1.0-win-x64.zip -Algorithm SHA256
+Get-FileHash .\EmuWorks-v0.1.1-win-x64.zip -Algorithm SHA256
 ```
 
 The package includes the EmuWorks MIT license, the original firmware licenses, MicroPython and runtime notices, and the .NET runtime license notices. Renode is installed separately. See `RELEASE.json` for the source commit and runtime version used to build this package.
