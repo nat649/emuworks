@@ -33,7 +33,10 @@ Copy-Item -LiteralPath (Join-Path $sourceRoot 'docs/windows-release.md') -Destin
 $assets = Get-Content -LiteralPath (Join-Path $sourceRoot 'app/obj/project.assets.json') -Raw | ConvertFrom-Json
 $licenses = Join-Path $package 'licenses/dotnet'
 New-Item -ItemType Directory $licenses -Force | Out-Null
-$runtimePackages = @($assets.libraries.PSObject.Properties.Name | Where-Object { $_ -match '^Microsoft\.(NETCore|WindowsDesktop)\.App\.Runtime\.win-x64/' })
+$runtimePackages = @($assets.project.frameworks.PSObject.Properties.Value.downloadDependencies |
+    Where-Object { $_.name -match '^Microsoft\.(NETCore|WindowsDesktop)\.App\.Runtime\.win-x64$' } |
+    ForEach-Object { $_.name + '/' + $_.version.Trim('[', ']').Split(',')[0].Trim() } |
+    Select-Object -Unique)
 if ($runtimePackages.Count -ne 2) { throw 'Expected both self-contained .NET runtime packages.' }
 foreach ($identity in $runtimePackages) {
     $parts = $identity.Split('/')
