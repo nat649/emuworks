@@ -12,11 +12,11 @@ const char identity[] = "EMUWORKS_CORE_V1";
 #define REG32(a) (*(volatile uint32_t *)(a))
 #define LCD_CMD (*(volatile uint16_t *)0x60000000)
 #define LCD_DATA (*(volatile uint16_t *)0x60020000)
-#define BG 0x10C5
-#define PANEL 0x1928
-#define TEXT 0xEF7D
-#define MUTED 0x8CB3
-#define ACCENT 0x4F36
+#define BG 0x10E5
+#define PANEL 0x1968
+#define TEXT 0xF7BE
+#define MUTED 0x9535
+#define ACCENT 0x7F38
 #define ERROR 0xFBAA
 #define INPUT_CAP 96
 #define HISTORY_CAP 8
@@ -45,6 +45,34 @@ static void rectangle(int x, int y, int w, int h, uint16_t color) {
     command(0x2B); param((unsigned)y >> 8); param(y & 255); param((unsigned)(y+h-1) >> 8); param((y+h-1) & 255);
     command(0x2C);
     for (int i = 0; i < w*h; ++i) param(color);
+}
+
+static uint16_t blend(uint16_t foreground, uint16_t background, unsigned alpha) {
+    unsigned r = (((foreground >> 11) & 31)*alpha + ((background >> 11) & 31)*(4-alpha) + 2)/4;
+    unsigned g = (((foreground >> 5) & 63)*alpha + ((background >> 5) & 63)*(4-alpha) + 2)/4;
+    unsigned b = ((foreground & 31)*alpha + (background & 31)*(4-alpha) + 2)/4;
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+/* Rounded cards, antialiased at their native 320 x 240 resolution. */
+static void rounded(int x, int y, int w, int h, int radius, uint16_t color, uint16_t background) {
+    rectangle(x+radius, y, w-2*radius, h, color);
+    rectangle(x, y+radius, radius, h-2*radius, color);
+    rectangle(x+w-radius, y+radius, radius, h-2*radius, color);
+    for (int cy = 0; cy < radius; ++cy) {
+        for (int cx = 0; cx < radius; ++cx) {
+            unsigned coverage = 0;
+            for (int sy = 1; sy <= 3; sy += 2) for (int sx = 1; sx <= 3; sx += 2) {
+                int dx = radius*4 - (cx*4+sx), dy = radius*4 - (cy*4+sy);
+                if (dx*dx + dy*dy <= radius*radius*16) ++coverage;
+            }
+            uint16_t pixel = blend(color, background, coverage);
+            rectangle(x+cx, y+cy, 1, 1, pixel);
+            rectangle(x+w-1-cx, y+cy, 1, 1, pixel);
+            rectangle(x+cx, y+h-1-cy, 1, 1, pixel);
+            rectangle(x+w-1-cx, y+h-1-cy, 1, 1, pixel);
+        }
+    }
 }
 
 /* Hand-drawn 4 x 6 pixel alphabet. Each hex nibble is one row, top first.
@@ -81,8 +109,24 @@ static uint32_t glyph(char c) {
         default: return 0xE12404;
     }
 }
-static void text(int x, int y, const char *s, int scale, uint16_t color, int max) {
+#include "font.h"
+
+static void smooth_character(int x, int y, char c, int scale, uint16_t color, uint16_t background) {
+    if (scale != 2 && scale != 3) return;
+    if (c >= 'a' && c <= 'z') c -= 'a'-'A';
+    unsigned index = 0;
+    while (smooth_chars[index] && smooth_chars[index] != c) ++index;
+    if (!smooth_chars[index]) index = sizeof(smooth_chars)-2;
+    int width = scale*4+1, height = scale*6+1;
+    const unsigned char *pixels = scale == 2 ? smooth_2[index] : smooth_3[index];
+    for (int py = 0; py < height; ++py) for (int px = 0; px < width; ++px) {
+        unsigned alpha = pixels[py*width+px];
+        if (alpha) rectangle(x+px, y+py, 1, 1, blend(color, background, alpha));
+    }
+}
+static void text(int x, int y, const char *s, int scale, uint16_t color, uint16_t background, int max) {
     for (int i = 0; s[i] && i < max; ++i) {
+        if (scale > 1) { smooth_character(x+i*5*scale, y, s[i], scale, color, background); continue; }
         uint32_t bits = glyph(s[i]);
         for (int row = 0; row < 6; ++row)
             for (int col = 0; col < 4; ++col)
@@ -101,29 +145,38 @@ static const char *error_text(int code) {
 }
 static void draw(void) {
     rectangle(0, 0, 320, 240, BG);
-    rectangle(0, 0, 320, 30, PANEL);
-    text(10, 9, "EMUWORKS CORE", 2, ACCENT, 26);
-    text(273, 12, "0.1", 1, MUTED, 8);
-    text(10, 38, "HISTORIQUE   HAUT/BAS : RAPPELER", 1, MUTED, 60);
+    text(16, 12, "EmuWorks", 2, TEXT, BG, 20);
+    rounded(246, 9, 58, 20, 10, PANEL, BG);
+    text(256, 16, "CORE 0.1", 1, ACCENT, PANEL, 9);
+    text(16, 43, "HISTORIQUE", 1, MUTED, BG, 30);
+    text(214, 43, "HAUT/BAS : RAPPEL", 1, MUTED, BG, 18);
     unsigned start = history_count > 3 ? history_count - 3 : 0;
     if (!history_count) {
-        text(10, 65, "VOTRE CALCULATRICE LIBRE", 2, TEXT, 30);
-        text(10, 91, "+ - * /   ( )   ^   ANS", 2, MUTED, 30);
+        text(16, 76, "A vous de calculer", 2, TEXT, BG, 28);
+        text(16, 101, "+ - * /   ( )   ^   ANS", 1, MUTED, BG, 50);
     }
     for (unsigned i = start; i < history_count; ++i) {
-        int y = 55 + (int)(i-start)*29;
+        int y = 61 + (int)(i-start)*24;
         unsigned size = text_length(history[i]);
-        text(10, y, history[i] + (size > 54 ? size-54 : 0), 1, MUTED, 54);
-        text(10, y+11, "=", 2, ACCENT, 1);
-        text(26, y+11, history_result[i], 2, TEXT, 26);
+        unsigned result_size = text_length(history_result[i]);
+        int result_left = 302-(int)result_size*10;
+        unsigned visible = (unsigned)(result_left-28)/5;
+        if (visible > 30) visible = 30;
+        text(16, y+3, history[i] + (size > visible ? size-visible : 0), 1, MUTED, BG, (int)visible);
+        text(result_left, y, history_result[i], 2, TEXT, BG, 23);
     }
-    rectangle(8, 146, 304, 34, PANEL);
-    unsigned start_input = cursor > 27 ? cursor-27 : 0;
-    text(14, 154, length ? input+start_input : "0", 2, TEXT, 29);
-    rectangle(14 + (int)(cursor-start_input)*10, 170, 8, 2, ACCENT);
-    text(10, 190, last_error ? error_text(last_error) : result, last_error ? 1 : 2, last_error ? ERROR : ACCENT, last_error ? 60 : 30);
-    text(10, 218, "ENTREE : CALCULER   ECHAP : EFFACER", 1, MUTED, 60);
-    text(10, 230, "6 CHIFFRES AFFICHES   A : ANS", 1, MUTED, 60);
+    rounded(10, 142, 300, 66, 14, 0x0883, BG);
+    rounded(10, 140, 300, 66, 14, PANEL, BG);
+    unsigned start_input = cursor > 26 ? cursor-26 : 0;
+    text(22, 151, length ? input+start_input : "0", 2, TEXT, PANEL, 27);
+    rectangle(22 + (int)(cursor-start_input)*10, 168, 7, 1, ACCENT);
+    if (last_error) text(22, 184, error_text(last_error), 1, ERROR, PANEL, 54);
+    else if (result[0]) {
+        text(22, 183, "=", 2, MUTED, PANEL, 1);
+        text(294-(int)text_length(result)*15, 178, result, 3, ACCENT, PANEL, 18);
+    } else text(22, 187, "UNE EXPRESSION, PUIS ENTREE", 1, MUTED, PANEL, 50);
+    text(16, 222, "ENTREE : CALCULER", 1, MUTED, BG, 30);
+    text(205, 222, "ECHAP : EFFACER", 1, MUTED, BG, 24);
 }
 static void insert(const char *s) {
     unsigned size = text_length(s);

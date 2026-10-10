@@ -1,6 +1,8 @@
 # EmuWorks Core 0.1
 
-Firmware ARM original pour le **materiel emule par EmuWorks**, sous la licence MIT du depot. Le code de demarrage, le calculateur, les pilotes et les glyphes bitmap sont ecrits dans ce dossier. Aucun code, image, police ou binaire Epsilon/Omega n'est utilise dans ce firmware.
+Firmware ARM original pour le **materiel emule par EmuWorks**, sous la licence MIT du depot. Le code de demarrage, le calculateur, les pilotes et les glyphes sont ecrits dans ce dossier. Aucun code, image, police ou binaire Epsilon/Omega n'est utilise dans ce firmware.
+
+L'interface utilise des cartes arrondies, un historique aere et des grands caracteres a traits adoucis. La police originale de `font.cjs` est rasterisee a la compilation : le firmware ne recalcule pas ses courbes pendant la saisie. Les petits libelles gardent leurs glyphes bitmap pour rester lisibles sur l'ecran 320 x 240.
 
 ## Utilisation
 
