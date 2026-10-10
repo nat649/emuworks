@@ -1,7 +1,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const MAGIC = 0xEE0BDDBA, END = 0x8004, REGION = 0x8014, BASE = 0x20000000;
+const MAGIC = 0xEE0BDDBA, BASE = 0x20000000;
+// Upsilon places its record cache before the header; Epsilon places it after the delegate.
+const LAYOUTS = [
+  { size: 32788, header: 0, end: 32772, cache: 32780 },
+  { size: 64020, header: 8, end: 64012, cache: 0 }
+];
+function layout(region) {
+  const format = LAYOUTS.find(f => region.length === f.size);
+  if (!format || region.readUInt32LE(format.header) !== MAGIC || region.readUInt32LE(format.end) !== MAGIC)
+    throw new Error('Truncated storage or invalid markers.');
+  return format;
+}
 function atomicWrite(file, data) {
   const temp = file + '.' + crypto.randomUUID() + '.tmp';
   try {
@@ -15,10 +26,9 @@ function safeName(name) {
     throw new Error('Nom de script refuse : ' + name);
 }
 function parse(region) {
-  if (region.length !== REGION || region.readUInt32LE(0) !== MAGIC || region.readUInt32LE(END) !== MAGIC)
-    throw new Error('Stockage tronque ou marqueurs invalides.');
+  const { header, end: END } = layout(region);
   const records = [], names = new Set();
-  let p = 4;
+  let p = header + 4;
   while (p + 2 <= END) {
     const size = region.readUInt16LE(p);
     if (!size) return records;
@@ -33,27 +43,34 @@ function parse(region) {
   }
   throw new Error('Terminateur absent.');
 }
-function findStorage(sram) {
+function locateStorage(sram) {
   if (sram.length !== 0x40000) throw new Error('Le vidage SRAM doit faire exactement 256 Ko.');
   const found = [];
-  for (let off = 0; off + REGION <= sram.length; off += 4) {
-    if (sram.readUInt32LE(off) !== MAGIC || sram.readUInt32LE(off + END) !== MAGIC) continue;
-    try { parse(sram.subarray(off, off + REGION)); found.push(off); } catch { /* candidat invalide */ }
+  for (let off = 0; off + 4 <= sram.length; off += 4) {
+    if (sram.readUInt32LE(off) !== MAGIC) continue;
+    for (const format of LAYOUTS) {
+      const start = off - format.header;
+      if (start < 0 || start + format.size > sram.length) continue;
+      const region = sram.subarray(start, start + format.size);
+      try { parse(region); found.push({ offset: off, start, region }); } catch { /* Invalid candidate. */ }
+    }
   }
   if (found.length !== 1) throw new Error('Stockage valide introuvable ou ambigu.');
   return found[0];
 }
+function findStorage(sram) { return locateStorage(sram).offset; }
 function rebuild(region, records) {
   parse(region);
+  const { header, end: END, cache } = layout(region);
   const out = Buffer.from(region);
-  out.fill(0, 4, END);
-  let p = 4;
+  out.fill(0, header + 4, END);
+  let p = header + 4;
   for (const r of records) {
     const name = Buffer.from(r.name, 'latin1'), size = 3 + name.length + r.body.length;
-    if (size > 65535 || p + size + 2 > END) throw new Error('Stockage plein (32 Ko).');
+    if (size > 65535 || p + size + 2 > END) throw new Error('Storage is full (' + (END - header - 4) + ' bytes).');
     out.writeUInt16LE(size, p); name.copy(out, p + 2); r.body.copy(out, p + 3 + name.length); p += size;
   }
-  out.writeUInt32LE(0, 0x800C); out.writeUInt32LE(0, 0x8010);
+  out.writeUInt32LE(0, cache); out.writeUInt32LE(0, cache + 4);
   parse(out);
   return out;
 }
@@ -123,7 +140,7 @@ function main([cmd, a1, a2, flag]) {
   if (cmd === 'backup') return backup(a1);
   if (cmd === 'restore') return restore(a1, a2);
   if (cmd === 'ref' || cmd === 'pull') {
-    const sram = fs.readFileSync(a1), off = findStorage(sram), region = sram.subarray(off, off + REGION);
+    const sram = fs.readFileSync(a1), { start, region } = locateStorage(sram);
     const records = parse(region);
     fs.mkdirSync(a2, { recursive: true }); recover(a2);
     const metaPath = path.join(a2, '.storage.json');
@@ -142,14 +159,15 @@ function main([cmd, a1, a2, flag]) {
       backup(a2); replaceScripts(a2, files);
     } else fs.mkdirSync(path.join(a2, 'scripts'), { recursive: true });
     atomicWrite(path.join(a2, '.storage.bin'), region);
-    atomicWrite(metaPath, JSON.stringify({ address: '0x' + (BASE + off).toString(16), flags }, null, 2));
-    console.log(cmd + ' : ' + files.size + ' script(s), stockage a 0x' + (BASE + off).toString(16)); return;
+    atomicWrite(metaPath, JSON.stringify({ address: '0x' + (BASE + start).toString(16), flags }, null, 2));
+    console.log(cmd + ' : ' + files.size + ' script(s), stockage a 0x' + (BASE + start).toString(16)); return;
   }
   if (cmd === 'push') {
     recover(a1);
     const meta = JSON.parse(fs.readFileSync(path.join(a1, '.storage.json'), 'utf8')), address = Number(meta.address);
-    if (!Number.isInteger(address) || address % 4 || address < BASE || address + REGION > BASE + 0x40000) throw new Error('Adresse de stockage invalide.');
     const region = fs.readFileSync(path.join(a1, '.storage.bin'));
+    layout(region);
+    if (!Number.isInteger(address) || address % 4 || address < BASE || address + region.length > BASE + 0x40000) throw new Error('Adresse de stockage invalide.');
     // Les autres records ne sont jamais interpretes comme du Python.
     const records = parse(region).filter(r => !r.name.endsWith('.py'));
     const files = readScripts(path.join(a1, 'scripts'));
@@ -166,4 +184,4 @@ function main([cmd, a1, a2, flag]) {
   }
   throw new Error('Commande inconnue : ' + cmd);
 }
-module.exports = { parse, rebuild, findStorage, main, backup, restore, atomicWrite };
+module.exports = { parse, rebuild, findStorage, locateStorage, main, backup, restore, atomicWrite };

@@ -83,6 +83,8 @@ On startup, the `.py` files from the folder are injected into the calculator; on
 
 The storage address is dynamically found at each boot by searching for the magic number `0xEE0BDDBA` in SRAM: it differs from one firmware to another, and the folder adapts without any reconfiguration.
 
+Script synchronization supports the 32,768-byte Epsilon/Omega storage layout and the 64,000-byte Upsilon layout. It validates both markers and all records, preserves the storage delegate, and clears the record cache at the position used by each firmware. Upsilon from `gbraad/numworks-firmwares` at commit `1c918f5` was tested with cold boot, framebuffer delivery, script injection, saving and restoration. Supply its matching N0110 images separately; no Upsilon binaries are bundled.
+
 ## How it works
 
     EmuWorks.exe ──stdin──▶ Renode (headless)

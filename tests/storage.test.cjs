@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { parse, rebuild, findStorage, main, backup, restore } = require('../renode/tools/storage');
+const { parse, rebuild, findStorage, locateStorage, main, backup, restore } = require('../renode/tools/storage');
 function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'emuworks-test-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -17,6 +17,44 @@ function blank() {
   return b;
 }
 function dump(region) { const b = Buffer.alloc(0x40000); region.copy(b, 0xcf8); return b; }
+function upsilon() {
+  const b = Buffer.alloc(64020);
+  b.writeUInt32LE(0x12345678, 0); b.writeUInt32LE(0x20001000, 4);
+  b.writeUInt32LE(0xEE0BDDBA, 8); b.writeUInt32LE(0xEE0BDDBA, 64012);
+  b.writeUInt32LE(0x2001abcd, 64016);
+  return b;
+}
+test('Upsilon supports large scripts, preserves its delegate and clears the preceding cache', t => {
+  const dir = fixture(t), bin = path.join(dir, 'sram.bin');
+  const code = '# large script\n' + 'x=1\n'.repeat(9000);
+  const region = rebuild(upsilon(), [{ name: 'large.py', body: Buffer.concat([Buffer.from([1]), Buffer.from(code), Buffer.from([0])]) }]);
+  assert.equal(region.readUInt32LE(0), 0); assert.equal(region.readUInt32LE(4), 0);
+  assert.equal(region.readUInt32LE(64012), 0xEE0BDDBA);
+  assert.equal(region.readUInt32LE(64016), 0x2001abcd);
+  const sram = dump(region);
+  sram.writeUInt32LE(0xdeadbeef, 0xcf8 + region.length);
+  assert.equal(findStorage(sram), 0xd00);
+  assert.equal(locateStorage(sram).start, 0xcf8);
+  fs.writeFileSync(bin, sram);
+  main(['pull', bin, dir]); main(['push', dir]);
+  assert.equal(fs.readFileSync(path.join(dir, 'scripts/large.py'), 'utf8'), code);
+  const rebuilt = fs.readFileSync(path.join(dir, '.storage.bin'));
+  assert.deepEqual(parse(rebuilt), parse(region));
+  assert.equal(rebuilt.length, 64020);
+  assert.match(fs.readFileSync(path.join(dir, 'load.resc'), 'utf8'), /0x20000cf8/);
+  rebuilt.copy(sram, locateStorage(sram).start);
+  assert.equal(sram.readUInt32LE(0xcf8 + region.length), 0xdeadbeef);
+});
+test('Upsilon corrupt footer, truncated region, overflow and ambiguous layouts are rejected', () => {
+  const region = upsilon(), original = Buffer.from(region);
+  assert.throws(() => rebuild(region, [{ name: 'full.py', body: Buffer.alloc(64000) }]));
+  assert.deepEqual(region, original);
+  assert.throws(() => parse(region.subarray(0, -4)));
+  const bad = dump(region); bad.writeUInt32LE(0, 0xcf8 + 64012);
+  assert.throws(() => findStorage(bad));
+  const ambiguous = dump(blank()); upsilon().copy(ambiguous, 0x10000);
+  assert.throws(() => findStorage(ambiguous));
+});
 test('roundtrip Python UTF-8, NUL final, drapeau et records non Python', t => {
   const dir = fixture(t), bin = path.join(dir, 'sram.bin');
   const code = 'print("été")\n';
