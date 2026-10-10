@@ -45,6 +45,12 @@ function run(dir, script) {
   fs.copyFileSync(path.join(build, 'internal.bin'), path.join(dir, 'rom/internal.bin'));
   const script = [...setup, 'emulation RunFor "0.05"', 'lcd Dump "' + path.join(dir,'home.raw').replace(/\\/g,'/') + '"'];
   function keys(names) { for (const name of names.split(' ')) script.push('keyboard TapKey "' + name + '"', 'emulation RunFor "0.03"'); }
+  script.push(snapshot('before-typing.bin'));
+  for (const name of ['ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE','ZERO']) {
+    script.push('keyboard TapKey "' + name + '"', 'emulation RunFor "0.01"');
+  }
+  script.push(snapshot('typing.bin'), 'lcd Dump "' + path.join(dir,'typing.raw').replace(/\\/g,'/') + '"');
+  keys('BACK');
   keys('LEFTPARENTHESIS TWO PLUS THREE RIGHTPARENTHESIS MULTIPLICATION FOUR EXE');
   script.push(snapshot('twenty.bin'));
   keys('UP'); script.push(snapshot('recall.bin'));
@@ -53,6 +59,17 @@ function run(dir, script) {
   script.push('lcd Dump "' + path.join(dir,'result.raw').replace(/\\/g,'/') + '"', 'quit');
   await run(dir, script);
   const sym = symbols(path.join(build, 'core.elf'));
+  const beforeTyping = fs.readFileSync(path.join(dir,'before-typing.bin'));
+  const typing = fs.readFileSync(path.join(dir,'typing.bin'));
+  assert.equal(typing.subarray(sym.input, typing.indexOf(0, sym.input)).toString(), '1234567890', 'Saisie rapide incomplete');
+  const pixels = typing.readUInt32LE(sym.lcd_pixels_sent) - beforeTyping.readUInt32LE(sym.lcd_pixels_sent);
+  assert(pixels < 320*240, 'La saisie redessine trop de pixels: ' + pixels);
+  const home = fs.readFileSync(path.join(dir,'home.raw')), typed = fs.readFileSync(path.join(dir,'typing.raw'));
+  for (let y = 0; y < 240; ++y) {
+    if (y >= 151 && y < 169) continue;
+    assert.deepEqual(typed.subarray(y*960,(y+1)*960), home.subarray(y*960,(y+1)*960), 'Zone statique modifiee ligne '+y);
+  }
+  console.log('PASS saisie rapide, zones statiques intactes; '+pixels+' pixels LCD pour 10 chiffres');
   assert.equal(fs.readFileSync(path.join(dir,'twenty.bin')).readFloatLE(sym.ans), 20);
   const recalled = fs.readFileSync(path.join(dir,'recall.bin'));
   assert.equal(recalled.subarray(sym.input, recalled.indexOf(0, sym.input)).toString(), '(2+3)*4');

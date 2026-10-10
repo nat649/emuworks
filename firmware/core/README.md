@@ -6,6 +6,8 @@ L'interface utilise des cartes arrondies, un historique aere et des grands carac
 
 ## Utilisation
 
+Le rendu est compose dans un tampon RGB565 en SRAM avant son envoi au LCD. Seules les portions de lignes modifiees sont transmises ; les decors restent en place pendant la saisie et l'historique ne se redessine qu'apres un calcul. Cela evite d'afficher l'effacement intermediaire de l'ecran. Le test d'integration verifie aussi la saisie rapide, les zones fixes et le volume de pixels transmis.
+
 Dans EmuWorks, selectionner **emuworks-core-0.1**, cliquer **Installer**, puis **Demarrer**. Sur une installation neuve sans firmware, Core est installe automatiquement. Un firmware utilisateur deja present est conserve.
 
 - `+ - * /`, nombres decimaux, parentheses, signes unaires et priorites usuelles.

@@ -27,6 +27,16 @@ static unsigned length, history_count, cursor;
 static int recalled = -1, last_error;
 static float ans;
 static uint64_t previous;
+/* Compose in SRAM; only completed pixels reach the LCD. */
+static uint16_t framebuffer[320*240];
+static uint16_t dirty_left[240], dirty_right[240];
+static int screen_ready, history_dirty = 1, rendered_error = -1;
+static char rendered_result[24];
+volatile unsigned lcd_pixels_sent;
+static int same_text(const char *a, const char *b) {
+    while (*a && *a == *b) { ++a; ++b; }
+    return *a == *b;
+}
 
 void *memcpy(void *dest, const void *source, size_t count) {
     unsigned char *d = dest; const unsigned char *s = source;
@@ -41,10 +51,33 @@ static void copy_text(char *d, const char *s) { while ((*d++ = *s++)) {} }
 static void command(uint16_t c) { LCD_CMD = c; }
 static void param(uint16_t p) { LCD_DATA = p; }
 static void rectangle(int x, int y, int w, int h, uint16_t color) {
-    command(0x2A); param((unsigned)x >> 8); param(x & 255); param((unsigned)(x+w-1) >> 8); param((x+w-1) & 255);
-    command(0x2B); param((unsigned)y >> 8); param(y & 255); param((unsigned)(y+h-1) >> 8); param((y+h-1) & 255);
-    command(0x2C);
-    for (int i = 0; i < w*h; ++i) param(color);
+    for (int py = y; py < y+h; ++py) for (int px = x; px < x+w; ++px) {
+        if ((unsigned)px >= 320 || (unsigned)py >= 240) continue;
+        unsigned offset = (unsigned)py*320 + (unsigned)px;
+        if (framebuffer[offset] == color) continue;
+        framebuffer[offset] = color;
+        if (px < dirty_left[py]) dirty_left[py] = (uint16_t)px;
+        if (px+1 > dirty_right[py]) dirty_right[py] = (uint16_t)(px+1);
+    }
+}
+static void present(void) {
+    for (int y = 0; y < 240; ++y) {
+        int left = dirty_left[y], right = dirty_right[y];
+        if (left >= right) continue;
+        int end = y+1;
+        while (end < 240 && dirty_left[end] == left && dirty_right[end] == right) ++end;
+        command(0x2A); param((unsigned)left >> 8); param(left & 255);
+        param((unsigned)(right-1) >> 8); param((right-1) & 255);
+        command(0x2B); param((unsigned)y >> 8); param(y & 255);
+        param((unsigned)(end-1) >> 8); param((end-1) & 255);
+        command(0x2C);
+        for (int row = y; row < end; ++row) {
+            for (int x = left; x < right; ++x) param(framebuffer[row*320+x]);
+            lcd_pixels_sent += (unsigned)(right-left);
+            dirty_left[row] = 320; dirty_right[row] = 0;
+        }
+        y = end-1;
+    }
 }
 
 static uint16_t blend(uint16_t foreground, uint16_t background, unsigned alpha) {
@@ -144,12 +177,21 @@ static const char *error_text(int code) {
     }
 }
 static void draw(void) {
+    if (!screen_ready) {
     rectangle(0, 0, 320, 240, BG);
     text(16, 12, "EmuWorks", 2, TEXT, BG, 20);
     rounded(246, 9, 58, 20, 10, PANEL, BG);
     text(256, 16, "CORE 0.1", 1, ACCENT, PANEL, 9);
     text(16, 43, "HISTORIQUE", 1, MUTED, BG, 30);
     text(214, 43, "HAUT/BAS : RAPPEL", 1, MUTED, BG, 18);
+    rounded(10, 142, 300, 66, 14, 0x0883, BG);
+    rounded(10, 140, 300, 66, 14, PANEL, BG);
+    text(16, 222, "ENTREE : CALCULER", 1, MUTED, BG, 30);
+    text(205, 222, "ECHAP : EFFACER", 1, MUTED, BG, 24);
+    screen_ready = 1;
+    }
+    if (history_dirty) {
+    rectangle(16, 61, 288, 68, BG);
     unsigned start = history_count > 3 ? history_count - 3 : 0;
     if (!history_count) {
         text(16, 76, "A vous de calculer", 2, TEXT, BG, 28);
@@ -165,18 +207,23 @@ static void draw(void) {
         text(16, y+3, history[i] + (size > visible ? size-visible : 0), 1, MUTED, BG, (int)visible);
         text(result_left, y, history_result[i], 2, TEXT, BG, 23);
     }
-    rounded(10, 142, 300, 66, 14, 0x0883, BG);
-    rounded(10, 140, 300, 66, 14, PANEL, BG);
+    history_dirty = 0;
+    }
+    rectangle(22, 151, 272, 18, PANEL);
     unsigned start_input = cursor > 26 ? cursor-26 : 0;
     text(22, 151, length ? input+start_input : "0", 2, TEXT, PANEL, 27);
     rectangle(22 + (int)(cursor-start_input)*10, 168, 7, 1, ACCENT);
+    if (last_error != rendered_error || !same_text(result, rendered_result)) {
+    rectangle(22, 178, 272, 19, PANEL);
     if (last_error) text(22, 184, error_text(last_error), 1, ERROR, PANEL, 54);
     else if (result[0]) {
         text(22, 183, "=", 2, MUTED, PANEL, 1);
         text(294-(int)text_length(result)*15, 178, result, 3, ACCENT, PANEL, 18);
     } else text(22, 187, "UNE EXPRESSION, PUIS ENTREE", 1, MUTED, PANEL, 50);
-    text(16, 222, "ENTREE : CALCULER", 1, MUTED, BG, 30);
-    text(205, 222, "ECHAP : EFFACER", 1, MUTED, BG, 24);
+    rendered_error = last_error;
+    copy_text(rendered_result, result);
+    }
+    present();
 }
 static void insert(const char *s) {
     unsigned size = text_length(s);
@@ -198,6 +245,7 @@ static void evaluate(void) {
         --history_count;
     }
     copy_text(history[history_count], input); copy_text(history_result[history_count], result);
+    history_dirty = 1;
     ++history_count; recalled = -1; input[0] = 0; length = cursor = 0;
 }
 static void key(int key) {
@@ -239,6 +287,7 @@ static uint64_t scan(void) {
     return down;
 }
 int main(void) {
+    for (int y = 0; y < 240; ++y) dirty_left[y] = 320;
     REG32(0x40023830) |= 5;  /* GPIO A/C clocks */
     REG32(0x40020014) = 0x1FF;
     REG32(0x40020000) = (REG32(0x40020000) & ~0x3FFFFu) | 0x15555;
