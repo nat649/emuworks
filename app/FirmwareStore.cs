@@ -47,6 +47,35 @@ internal static class FirmwareStore
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
 
+    public static string ImportToLibrary(string internalPath, string externalPath, string library)
+    {
+        Validate(internalPath, externalPath);
+        Directory.CreateDirectory(library);
+        foreach (string existing in Directory.GetDirectories(library))
+        {
+            if (Path.GetFileName(existing).StartsWith(".")) continue;
+            if (Same(internalPath, Path.Combine(existing, "internal.bin"))
+                && Same(externalPath, Path.Combine(existing, "external.bin"))) return existing;
+        }
+        byte[] pair = new byte[64];
+        using (var input = File.OpenRead(internalPath)) SHA256.HashData(input).CopyTo(pair, 0);
+        using (var input = File.OpenRead(externalPath)) SHA256.HashData(input).CopyTo(pair, 32);
+        string id = Convert.ToHexString(SHA256.HashData(pair)).ToLowerInvariant()[..16];
+        string destination = Path.Combine(library, "imported-" + id);
+        string stage = Path.Combine(library, ".import-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(stage);
+        try
+        {
+            AtomicCopy(internalPath, Path.Combine(stage, "internal.bin"));
+            AtomicCopy(externalPath, Path.Combine(stage, "external.bin"));
+            Validate(Path.Combine(stage, "internal.bin"), Path.Combine(stage, "external.bin"));
+            // Publish both images together; the library never lists an incomplete import.
+            Directory.Move(stage, destination);
+            return destination;
+        }
+        finally { if (Directory.Exists(stage)) Directory.Delete(stage, true); }
+    }
+
     // Un journal sur disque permet de retrouver la paire precedente apres une interruption.
     public static void Recover(string rom)
     {

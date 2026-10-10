@@ -6,7 +6,7 @@ All in a single window: Renode is launched headlessly, and its screen is forward
 
 ## Windows download
 
-Download the Windows x64 archive from [Releases](https://github.com/nat649/emuworks/releases). It includes the .NET runtime and both built-in firmwares. Install Renode separately, extract the complete archive to a writable path without spaces, and launch `EmuWorks.exe`. See [Windows release instructions](docs/windows-release.md).
+Download the Windows x64 archive from [Releases](https://github.com/nat649/emuworks/releases). It includes the .NET runtime and both built-in firmwares. Install Renode separately. **For Epsilon, Omega or Upsilon, also install Node.js LTS and ensure `node --version` works in a new terminal.** Extract the complete archive to a writable path without spaces, and launch `EmuWorks.exe`. See [Windows release instructions](docs/windows-release.md).
 
 ## Built-in firmware: EmuWorks Core
 
@@ -35,7 +35,7 @@ To develop Core, clone [emuworks-core](https://github.com/nat649/emuworks-core) 
 | | |
 |---|---|
 | [Renode](https://renode.io) 1.16 | `winget install Renode.Renode` |
-| [Node.js](https://nodejs.org) | optional for Core; required for Python-script synchronization with Epsilon/Omega |
+| [Node.js LTS](https://nodejs.org/en/download) | required for backups and script synchronization with Epsilon/Omega/Upsilon; built-in Core and Code do not need it |
 | .NET Desktop Runtime 8 | for the application; or `dotnet publish` from `app/` |
 
 > ⚠️ **Install the folder in a path without spaces**, for example
@@ -49,7 +49,11 @@ To develop Core, clone [emuworks-core](https://github.com/nat649/emuworks-core) 
 1. Fork [numworks/epsilon](https://github.com/numworks/epsilon).
 2. Copy `renode/build-firmware-n0110.yml` into `.github/workflows/` on your fork's default branch.
 3. Actions → **Firmware N0110 (Renode)** → Run workflow.
-4. Download the artifact and place the two images into `firmwares//internal.bin` and `external.bin`.
+4. Download the artifact and import its matching internal/external images with **Importer un firmware...**, or place them under `firmwares/<name>/internal.bin` and `firmwares/<name>/external.bin`.
+
+Node.js must be available on the Windows `PATH` before launching external firmware. Install the Windows LTS installer from [nodejs.org](https://nodejs.org/en/download), keep **Add to PATH** enabled, and restart EmuWorks after installation. Verify `node --version` in a new terminal. A missing `node` process prevents script backups, so startup is cancelled to preserve your scripts.
+
+New builds save imported firmware pairs in the library under `imported-<id>` and select their entry in the dropdown. Reimporting the same pair reuses its existing entry. In release **v0.1.0**, importing only updates the active `rom/` images: to add a dropdown entry, create `firmwares/<name>/` beside `EmuWorks.exe`, put the matching images there as `internal.bin` and `external.bin`, and restart EmuWorks.
 
 The artifact contains two variants:
 

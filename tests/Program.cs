@@ -34,6 +34,13 @@ internal static class Tests
             Environment.SetEnvironmentVariable("RENODE_EXE", Environment.ProcessPath);
             ApplicationConfiguration.Initialize();
             using var form = new MainForm { ShowInTaskbar = false, Opacity = 0 };
+            // Isolate the fake screen server from a calculator the user may have running.
+            var portProbe = new TcpListener(IPAddress.Loopback, 0);
+            portProbe.Start();
+            int testPort = ((IPEndPoint)portProbe.LocalEndpoint).Port;
+            portProbe.Stop();
+            typeof(MainForm).GetField("PortEcran", Hidden).SetValue(form, testPort);
+            Environment.SetEnvironmentVariable("EMUWORKS_TEST_PORT", testPort.ToString());
             using var host = new Form { ShowInTaskbar = false, Opacity = 0 };
             host.Shown += (_, _) => form.Show();
             form.Shown += async (_, _) =>
@@ -55,6 +62,19 @@ internal static class Tests
                         await start;
                         Check(Field(form, "renode") == null && Field(form, "session") == null, "Session restante");
                         Check(File.ReadAllText(Path.Combine(rom, "scripts/keep.py")).Contains("keep"), "Scripts ecrases");
+                    });
+                    await Case("missing Node.js explains the dependency and preserves scripts", async () =>
+                    {
+                        string previousPath = Environment.GetEnvironmentVariable("PATH");
+                        Environment.SetEnvironmentVariable("PATH", "");
+                        try
+                        {
+                            await Call(form, "Demarrer");
+                            Check(Field(form, "renode") == null && Field(form, "session") == null, "Renode started without a script backup");
+                            Check(((TextBox)Field(form, "logBox")).Text.Contains("Install Node.js LTS"), "Missing dependency was not explained");
+                            Check(File.ReadAllText(Path.Combine(rom, "scripts/keep.py")).Contains("keep"), "Missing Node.js changed user scripts");
+                        }
+                        finally { Environment.SetEnvironmentVariable("PATH", previousPath); }
                     });
                     await Case("deux cycles marche/arret et processus libere", async () =>
                     {
@@ -207,10 +227,24 @@ internal static class Tests
         Console.WriteLine("PASS Code installation, firmware preservation, script packing and validation");
         string a = Path.Combine(root, "a"), b = Path.Combine(root, "b");
         MakeFirmware(a, 0x08000009); MakeFirmware(b, 0x00200009);
+        string library = Path.Combine(root, "import-library");
+        string imported = FirmwareStore.ImportToLibrary(Path.Combine(a, "internal.bin"), Path.Combine(a, "external.bin"), library);
+        Check(FirmwareStore.Same(Path.Combine(imported, "external.bin"), Path.Combine(a, "external.bin")), "Library import lost an image");
+        Check(FirmwareStore.ImportToLibrary(Path.Combine(a, "internal.bin"), Path.Combine(a, "external.bin"), library) == imported, "Duplicate import created a new entry");
+        string named = Path.Combine(library, "custom-firmware");
+        Directory.Move(imported, named);
+        Check(FirmwareStore.ImportToLibrary(Path.Combine(a, "internal.bin"), Path.Combine(a, "external.bin"), library) == named, "Existing named firmware was duplicated");
+        File.Delete(Path.Combine(a, "internal.bin"));
+        FirmwareStore.Validate(Path.Combine(named, "internal.bin"), Path.Combine(named, "external.bin"));
+        MakeFirmware(a, 0x08000009);
+        Console.WriteLine("PASS persistent firmware library import, source independence and deduplication");
         FirmwareStore.Install(Path.Combine(a, "internal.bin"), Path.Combine(a, "external.bin"), b);
         Check(FirmwareStore.Same(Path.Combine(a,"internal.bin"), Path.Combine(b,"internal.bin")), "Import invalide");
         byte[] old = File.ReadAllBytes(Path.Combine(b,"internal.bin"));
         File.WriteAllBytes(Path.Combine(a,"external.bin"), Array.Empty<byte>());
+        try { FirmwareStore.ImportToLibrary(Path.Combine(a, "internal.bin"), Path.Combine(a, "external.bin"), library); throw new Exception("Invalid library image accepted"); }
+        catch (IOException) { }
+        Check(Directory.GetDirectories(library).Length == 1, "Rejected import left a library entry");
         try { FirmwareStore.Install(Path.Combine(a,"internal.bin"), Path.Combine(a,"external.bin"), b); throw new Exception("Image vide acceptee"); }
         catch (IOException) { }
         Check(old.SequenceEqual(File.ReadAllBytes(Path.Combine(b,"internal.bin"))), "Image precedente modifiee");
@@ -239,7 +273,7 @@ internal static class Tests
             }
         });
         if (mode == "silent") { await input; return; }
-        var listener = new TcpListener(IPAddress.Loopback, 3555);
+        var listener = new TcpListener(IPAddress.Loopback, int.Parse(Environment.GetEnvironmentVariable("EMUWORKS_TEST_PORT")));
         listener.Start();
         try
         {

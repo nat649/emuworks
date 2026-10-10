@@ -14,6 +14,7 @@ using System;
 using System.Buffers;
 using System.Net.NetworkInformation;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -235,7 +236,7 @@ namespace EmuWorks
 
     public class MainForm : Form
     {
-        private const int PortEcran = 3555;
+        private readonly int PortEcran = 3555;
         private const int PeriodeImageMs = 33;      // ~30 images par seconde
         private const int DelaiArretMs = 8000;      // avant de terminer Renode de force
 
@@ -532,6 +533,7 @@ namespace EmuWorks
             foreach (var dir in Directory.GetDirectories(FirmwaresDir).OrderBy(d => d))
             {
                 string nom = Path.GetFileName(dir);
+                if (nom.StartsWith(".")) continue;
                 if (!File.Exists(Path.Combine(dir, "internal.bin")) || !File.Exists(Path.Combine(dir, "external.bin"))) continue;
                 bool memeTaille = FirmwareStore.Same(Path.Combine(dir, "internal.bin"), Path.Combine(RomDir, "internal.bin"))
                                && FirmwareStore.Same(Path.Combine(dir, "external.bin"), Path.Combine(RomDir, "external.bin"));
@@ -561,14 +563,21 @@ namespace EmuWorks
             if (inside.ShowDialog(this) != DialogResult.OK) return;
             using var outside = new OpenFileDialog { Title = "Choisir l'image externe correspondante (external.bin)", Filter = "Image binaire (*.bin)|*.bin", InitialDirectory = Path.GetDirectoryName(inside.FileName) };
             if (outside.ShowDialog(this) != DialogResult.OK) return;
-            InstallFirmware(inside.FileName, outside.FileName);
+            InstallFirmware(inside.FileName, outside.FileName, keepInLibrary: true);
         }
 
-        private void InstallFirmware(string inside, string outside)
+        private void InstallFirmware(string inside, string outside, bool keepInLibrary = false)
         {
             try
             {
                 using var lease = AcquireLease();
+                if (keepInLibrary)
+                {
+                    string imported = FirmwareStore.ImportToLibrary(inside, outside, FirmwaresDir);
+                    inside = Path.Combine(imported, "internal.bin");
+                    outside = Path.Combine(imported, "external.bin");
+                    Log("Firmware saved to library: " + Path.GetFileName(imported));
+                }
                 FirmwareStore.Install(inside, outside, RomDir);
                 Log("Firmware installe. Les tailles et la table de demarrage ont ete verifiees.");
                 RefreshFirmwares();
@@ -953,6 +962,11 @@ namespace EmuWorks
                 foreach (var line in Lignes(await output)) Log(line);
                 foreach (var line in Lignes(await errors)) Log(line);
                 return process.ExitCode == 0;
+            }
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 2)
+            {
+                Log("Node.js could not be found. Install Node.js LTS from https://nodejs.org/en/download, then restart EmuWorks. External firmware requires it for script backups and synchronization.");
+                return false;
             }
             catch (Exception ex) { Log("Outil scripts : " + ex.Message); return false; }
         }
