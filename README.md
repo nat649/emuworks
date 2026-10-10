@@ -93,3 +93,9 @@ It does not cover, and this repository does not distribute:
 | [Renode](https://github.com/renode/renode), the emulation infrastructure | © Antmicro — MIT |
 
 The peripheral models describe the hardware of the STM32F730 and the N0110 board: registers, ST7789V display protocol, keyboard matrix wiring. They are written based on component documentation and observation of the firmware's behavior, not derived from its code.
+
+## Backup history and reliable shutdown
+
+The application now includes **Importer un firmware...** (select the internal and external images from the same N0110 build) and **Restaurer une sauvegarde...**. Script versions are stored under `rom/sauvegardes/`, with SHA-256 integrity checks. Shutdown pauses the machine before the last memory dump; cancelled startup never imports an older session's memory. A forced shutdown may recover an earlier periodic save.
+
+See [backup, recovery and testing instructions](docs/fiabilite.md). These backups cover Python scripts, not a complete calculator snapshot. Firmware remains supplied separately by the user.

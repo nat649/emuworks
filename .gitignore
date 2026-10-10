@@ -28,10 +28,18 @@ rom/.storage.json
 rom/load.resc
 rom/scripts/
 rom/.scripts-precedents/
+rom/sauvegardes/
+rom/.scripts-*/
+rom/.sessions/
+rom/.session.lock
+rom/.firmware-pending/
+rom/*.tmp
 
 # --- artefacts de compilation ----------------------------------------------
 app/bin/
 app/obj/
+tests/bin/
+tests/obj/
 EmuWorks.exe
 NumWorks.exe
 

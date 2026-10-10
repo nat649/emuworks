@@ -11,6 +11,8 @@
 // ============================================================================
 
 using System;
+using System.Buffers;
+using System.Net.NetworkInformation;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -64,7 +66,7 @@ namespace EmuWorks
             int largeur = args.Length >= 5 ? int.Parse(args[3]) : 640;
             int hauteur = args.Length >= 5 ? int.Parse(args[4]) : 480;
 
-            var panneau = new EcranPanel();
+            using var panneau = new EcranPanel();
             byte[] rgb888 = File.ReadAllBytes(args[1]);
             int pixels = EcranPanel.LargeurEcran * EcranPanel.HauteurEcran;
             if (rgb888.Length >= pixels * 3)
@@ -111,6 +113,12 @@ namespace EmuWorks
                      | ControlStyles.ResizeRedraw, true);
             BackColor = Fond;
             TabStop = true;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) image.Dispose();
+            base.Dispose(disposing);
         }
 
         public bool Allume { get; set; }
@@ -208,7 +216,7 @@ namespace EmuWorks
                 g.FillRectangle(eteint, dalle);
                 using var police = new Font("Segoe UI", 10.5F);
                 using var texte = new SolidBrush(Color.FromArgb(120, 122, 132));
-                var format = new StringFormat
+                using var format = new StringFormat
                 {
                     Alignment = StringAlignment.Center,
                     LineAlignment = StringAlignment.Center
@@ -283,7 +291,7 @@ namespace EmuWorks
         private string RomTool => Path.Combine(RenodeDir, "tools", "rom.js");
 
         private ComboBox firmwareBox;
-        private Button installButton;
+        private Button installButton, importButton, restoreButton;
         private ListBox scriptList;
         private Button addButton, removeButton, folderButton;
         private Button startButton;
@@ -294,8 +302,18 @@ namespace EmuWorks
 
         private Process renode;
         private TcpClient socket;
-        private Thread fluxImages;
-        private volatile bool enMarche;
+        private Task fluxImages;
+        private bool enMarche;
+        private CancellationTokenSource session;
+        private readonly SemaphoreSlim lifecycle = new SemaphoreSlim(1, 1);
+        private readonly object frameLock = new object();
+        private byte[] latestFrame;
+        private readonly System.Windows.Forms.Timer imageTimer = new System.Windows.Forms.Timer { Interval = PeriodeImageMs };
+        private string sessionDump;
+        private bool sessionReady, closing, closeAllowed;
+        private FileStream sessionLease;
+        private const int StartupTimeoutSeconds = 60;
+        private const int FrameTimeoutSeconds = 10;
         private readonly HashSet<string> touchesEnfoncees = new HashSet<string>();
 
         public MainForm()
@@ -305,6 +323,9 @@ namespace EmuWorks
             RefreshFirmwares();
             RefreshScripts();
             ChargerSerie();
+            try { using var lease = AcquireLease(); FirmwareStore.Recover(RomDir); }
+            catch (Exception ex) { Log("Recuperation du firmware : " + ex.Message); }
+            imageTimer.Tick += (s, e) => RenderLatestFrame();
             CheckEnvironment();
         }
 
@@ -345,6 +366,8 @@ namespace EmuWorks
         //  puis des emplacements habituels.
         private static string ResolveBaseDir()
         {
+            string configured = Environment.GetEnvironmentVariable("EMUWORKS_BASE");
+            if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
             string here = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
             if (Directory.Exists(Path.Combine(here, "rom"))) return here;
             string parent = Path.GetDirectoryName(here);
@@ -375,6 +398,8 @@ namespace EmuWorks
             };
             installButton = new Button { Text = "Installer", Location = new Point(266, 12), Width = 78 };
             installButton.Click += OnInstallFirmware;
+            importButton = new Button { Text = "Importer un firmware...", Location = new Point(688, 12), Width = 184 };
+            importButton.Click += OnImportFirmware;
 
             //  Epsilon ne stocke pas de numero de serie : il encode l'identifiant
             //  unique du processeur. On le choisit donc librement.
@@ -395,7 +420,7 @@ namespace EmuWorks
             };
             scriptList = new ListBox
             {
-                Location = new Point(12, 24), Size = new Size(306, 254), IntegralHeight = false
+                Location = new Point(12, 24), Size = new Size(306, 216), IntegralHeight = false
             };
             scriptList.DoubleClick += OnOpenScript;
             addButton = new Button { Text = "Ajouter...", Location = new Point(12, 290), Width = 96 };
@@ -404,7 +429,9 @@ namespace EmuWorks
             removeButton.Click += OnRemoveScript;
             folderButton = new Button { Text = "Dossier", Location = new Point(220, 290), Width = 96 };
             folderButton.Click += (s, e) => OpenInShell(ScriptsDir);
-            scriptsGroup.Controls.AddRange(new Control[] { scriptList, addButton, removeButton, folderButton });
+            restoreButton = new Button { Text = "Restaurer une sauvegarde...", Location = new Point(12, 248), Width = 304 };
+            restoreButton.Click += OnRestoreScripts;
+            scriptsGroup.Controls.AddRange(new Control[] { scriptList, addButton, removeButton, folderButton, restoreButton });
 
             var logLabel = new Label { Text = "Journal :", AutoSize = true, Location = new Point(14, 388) };
             logBox = new TextBox
@@ -440,7 +467,7 @@ namespace EmuWorks
 
             Controls.AddRange(new Control[]
             {
-                firmwareLabel, firmwareBox, installButton, serieLabel, serieBox,
+                firmwareLabel, firmwareBox, installButton, importButton, serieLabel, serieBox,
                 scriptsGroup, logLabel, logBox, ecran, startButton, statusLabel
             });
         }
@@ -464,8 +491,8 @@ namespace EmuWorks
             else if (!File.Exists(Path.Combine(RomDir, "internal.bin")))
             {
                 Log("Aucun firmware dans rom\\.");
-                Log("Aucun firmware n'est distribue avec ce depot : Epsilon est sous");
-                Log("licence CC BY-NC-SA, on ne peut pas en redistribuer les binaires.");
+                Log("Aucun firmware n'est distribue avec ce depot :");
+                Log("importe tes images avec le bouton Importer un firmware.");
                 Log("Compile le tien avec renode\\build-firmware-n0110.yml, puis pose");
                 Log("les deux images dans firmwares\\<nom>\\ et clique Installer.");
             }
@@ -488,16 +515,14 @@ namespace EmuWorks
             firmwareBox.Items.Clear();
             if (!Directory.Exists(FirmwaresDir)) return;
 
-            long actif = FileLength(Path.Combine(RomDir, "internal.bin"));
-            long actifExt = FileLength(Path.Combine(RomDir, "external.bin"));
             string selection = null;
 
             foreach (var dir in Directory.GetDirectories(FirmwaresDir).OrderBy(d => d))
             {
                 string nom = Path.GetFileName(dir);
-                if (!File.Exists(Path.Combine(dir, "internal.bin"))) continue;
-                bool memeTaille = FileLength(Path.Combine(dir, "internal.bin")) == actif
-                               && FileLength(Path.Combine(dir, "external.bin")) == actifExt;
+                if (!File.Exists(Path.Combine(dir, "internal.bin")) || !File.Exists(Path.Combine(dir, "external.bin"))) continue;
+                bool memeTaille = FirmwareStore.Same(Path.Combine(dir, "internal.bin"), Path.Combine(RomDir, "internal.bin"))
+                               && FirmwareStore.Same(Path.Combine(dir, "external.bin"), Path.Combine(RomDir, "external.bin"));
                 firmwareBox.Items.Add(nom);
                 if (memeTaille && selection == null) selection = nom;
             }
@@ -512,39 +537,62 @@ namespace EmuWorks
 
         private void OnInstallFirmware(object sender, EventArgs e)
         {
-            if (firmwareBox.SelectedItem == null) return;
-            string nom = firmwareBox.SelectedItem.ToString();
-            string src = Path.Combine(FirmwaresDir, nom);
+            if (session != null || firmwareBox.SelectedItem == null) return;
+            string src = Path.Combine(FirmwaresDir, firmwareBox.SelectedItem.ToString());
+            InstallFirmware(Path.Combine(src, "internal.bin"), Path.Combine(src, "external.bin"));
+        }
 
-            //  Les deux images vont ensemble : en copier une seule laisserait
-            //  rom\ dans un etat incoherent, moitie ancien firmware moitie
-            //  nouveau, et la calculatrice ne demarrerait pas.
-            foreach (var image in new[] { "internal.bin", "external.bin" })
-            {
-                if (File.Exists(Path.Combine(src, image))) continue;
-                Log(nom + " est incomplet : " + image + " manque.");
-                Log("Un firmware a besoin des deux images, internal.bin et external.bin.");
-                return;
-            }
+        private void OnImportFirmware(object sender, EventArgs e)
+        {
+            if (session != null) return;
+            using var inside = new OpenFileDialog { Title = "Choisir l'image interne (internal.bin ou epsilon.internal.bin)", Filter = "Image binaire (*.bin)|*.bin" };
+            if (inside.ShowDialog(this) != DialogResult.OK) return;
+            using var outside = new OpenFileDialog { Title = "Choisir l'image externe correspondante (external.bin)", Filter = "Image binaire (*.bin)|*.bin", InitialDirectory = Path.GetDirectoryName(inside.FileName) };
+            if (outside.ShowDialog(this) != DialogResult.OK) return;
+            InstallFirmware(inside.FileName, outside.FileName);
+        }
 
+        private void InstallFirmware(string inside, string outside)
+        {
             try
             {
-                File.Copy(Path.Combine(src, "internal.bin"), Path.Combine(RomDir, "internal.bin"), true);
-                File.Copy(Path.Combine(src, "external.bin"), Path.Combine(RomDir, "external.bin"), true);
-                // L'adresse du stockage change d'un firmware a l'autre : on jette
-                // l'image de reference, elle sera reconstruite au demarrage.
-                foreach (var f in new[] { "sram.bin", ".storage.bin", ".storage.json", "load.resc" })
-                {
-                    string p = Path.Combine(RomDir, f);
-                    if (File.Exists(p)) File.Delete(p);
-                }
-                Log(nom + " installe.");
+                using var lease = AcquireLease();
+                FirmwareStore.Install(inside, outside, RomDir);
+                Log("Firmware installe. Les tailles et la table de demarrage ont ete verifiees.");
+                RefreshFirmwares();
+                startButton.Enabled = true;
+                CheckEnvironment();
             }
-            catch (Exception ex)
+            catch (Exception ex) { Log("Installation refusee : " + ex.Message); }
+        }
+
+        private async void OnRestoreScripts(object sender, EventArgs e)
+        {
+            if (session != null) return;
+            using var dialog = new OpenFileDialog
             {
-                Log("Echec de l'installation : " + ex.Message);
+                Title = "Choisir le manifest.json de la sauvegarde a restaurer",
+                Filter = "Sauvegarde (manifest.json)|manifest.json",
+                InitialDirectory = Path.Combine(RomDir, "sauvegardes")
+            };
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            await lifecycle.WaitAsync();
+            if (closing) { lifecycle.Release(); return; }
+            SetControlsEnabled(false); startButton.Enabled = false;
+            try
+            {
+                using var lease = AcquireLease();
+                if (await RunTool("restore", RomDir, Path.GetDirectoryName(dialog.FileName))) RefreshScripts();
+            }
+            catch (Exception ex) { Log("Restauration refusee : " + ex.Message); }
+            finally
+            {
+                SetControlsEnabled(true); startButton.Enabled = true; CheckEnvironment();
+                lifecycle.Release();
             }
         }
+
+
 
         // --- scripts ---------------------------------------------------------
         private void RefreshScripts()
@@ -559,41 +607,74 @@ namespace EmuWorks
             if (garde != null && scriptList.Items.Contains(garde)) scriptList.SelectedItem = garde;
         }
 
-        private void OnAddScript(object sender, EventArgs e)
+        private async void OnAddScript(object sender, EventArgs e)
         {
             using var dlg = new OpenFileDialog
             {
                 Title = "Ajouter un script Python",
-                Filter = "Scripts Python (*.py)|*.py|Tous les fichiers (*.*)|*.*",
+                Filter = "Scripts Python (*.py)|*.py",
                 Multiselect = true
             };
             if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            await EditScripts(() => {
             Directory.CreateDirectory(ScriptsDir);
             foreach (var f in dlg.FileNames)
             {
                 try
                 {
-                    File.Copy(f, Path.Combine(ScriptsDir, Path.GetFileName(f)), true);
+                    string name = Path.GetFileName(f);
+                    if (!System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*\.py$"))
+                        throw new IOException("Nom Python invalide : " + name);
+                    string temporary = Path.Combine(RomDir, Guid.NewGuid().ToString("N") + ".tmp");
+                    try
+                    {
+                        File.Copy(f, temporary);
+                        File.Move(temporary, Path.Combine(ScriptsDir, name), true);
+                    }
+                    finally { if (File.Exists(temporary)) File.Delete(temporary); }
                     Log("Ajoute : " + Path.GetFileName(f));
                 }
                 catch (Exception ex) { Log("Echec : " + ex.Message); }
             }
-            RefreshScripts();
+            });
         }
 
-        private void OnRemoveScript(object sender, EventArgs e)
+        private async void OnRemoveScript(object sender, EventArgs e)
         {
             if (scriptList.SelectedItem == null) return;
             string nom = scriptList.SelectedItem.ToString();
             if (MessageBox.Show(this, "Supprimer " + nom + " ?", "Confirmer",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-            try
+            await EditScripts(() =>
             {
                 File.Delete(Path.Combine(ScriptsDir, nom));
                 Log("Supprime : " + nom);
+            });
+        }
+
+        private FileStream AcquireLease()
+        {
+            Directory.CreateDirectory(RomDir);
+            try { return new FileStream(Path.Combine(RomDir, ".session.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException ex) { throw new IOException("Cette ROM est deja utilisee par une autre instance, ou inaccessible.", ex); }
+        }
+
+        private async Task EditScripts(Action edit)
+        {
+            await lifecycle.WaitAsync();
+            if (closing || session != null) { lifecycle.Release(); return; }
+            SetControlsEnabled(false); startButton.Enabled = false;
+            try
+            {
+                using var lease = AcquireLease();
+                if (await RunTool("backup", RomDir)) edit();
             }
-            catch (Exception ex) { Log("Echec : " + ex.Message); }
-            RefreshScripts();
+            catch (Exception ex) { Log("Modification refusee : " + ex.Message); }
+            finally
+            {
+                RefreshScripts(); SetControlsEnabled(true); startButton.Enabled = true;
+                lifecycle.Release(); CheckEnvironment();
+            }
         }
 
         private void OnOpenScript(object sender, EventArgs e)
@@ -611,270 +692,245 @@ namespace EmuWorks
         // --- marche / arret ---------------------------------------------------
         private async void OnStartStop(object sender, EventArgs e)
         {
-            if (enMarche) { await Arreter(); return; }
+            if (session != null) await Arreter();
+            else await Demarrer();
+        }
 
-            if (!File.Exists(Path.Combine(RomDir, "internal.bin")))
-            {
-                Log("Aucun firmware dans rom\\. Choisis-en un et clique Installer.");
-                return;
-            }
-
-            //  Un Renode oublie garde le port de l'ecran : le nouveau n'arrive
-            //  pas a le prendre, et l'application se connecterait a l'ancien --
-            //  une calculatrice figee, sans message d'erreur.
-            if (PortOccupe())
-            {
-                Log("Le port " + PortEcran + " est deja pris : un emulateur tourne encore ?");
-                Log("Ferme-le (ou termine Renode.exe) avant de redemarrer.");
-                return;
-            }
-
-            SauvegarderScripts();
-            EnregistrerSerie();
-            startButton.Enabled = false;
-            startButton.Text = "Demarrage...";
-            Log("Demarrage de la calculatrice...");
-
+        private async Task Demarrer()
+        {
+            await lifecycle.WaitAsync();
+            bool started = false;
             try
             {
+                if (closing || session != null) return;
+                if (baseDir.Contains(' ')) throw new IOException("Deplace EmuWorks vers un chemin sans espace.");
+                if (!File.Exists(RenodeExe)) throw new IOException("Renode introuvable. Installe Renode ou renseigne RENODE_EXE.");
+                session = new CancellationTokenSource();
+                sessionLease = AcquireLease();
+                FirmwareStore.Recover(RomDir);
+                FirmwareStore.Validate(Path.Combine(RomDir, "internal.bin"), Path.Combine(RomDir, "external.bin"));
+                if (IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(p => p.Port == PortEcran))
+                    throw new IOException("Le port " + PortEcran + " est deja utilise. Ferme l'autre emulateur.");
+
+                var token = session.Token;
+                SetControlsEnabled(false);
+                startButton.Text = "Annuler le demarrage";
+                if (!await RunTool("backup", RomDir)) throw new IOException("La sauvegarde des scripts a echoue. Demarrage annule.");
+                token.ThrowIfCancellationRequested();
+                EnregistrerSerie();
+                string sessions = Path.Combine(RomDir, ".sessions");
+                Directory.CreateDirectory(sessions);
+                sessionDump = Path.Combine(sessions, Guid.NewGuid().ToString("N") + ".bin");
+                sessionReady = false;
+
                 var info = new ProcessStartInfo(RenodeExe,
                     "--console --disable-xwt --hide-log -e \"i @numworks-embarque.resc\"")
                 {
-                    WorkingDirectory = RenodeDir,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
+                    WorkingDirectory = RenodeDir, UseShellExecute = false, CreateNoWindow = true,
+                    RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
                 };
-                //  Renode ne conserve pas son repertoire de lancement : c'est
-                //  cette variable qui dit a MemFile ou trouver rom\ et
-                //  renode\tools\. Sans elle, le projet ne serait installable
-                //  qu'a un chemin code en dur.
                 info.Environment["EMUWORKS_BASE"] = baseDir;
-                renode = Process.Start(info);
+                info.Environment["EMUWORKS_SESSION_SRAM"] = sessionDump;
+                var process = new Process { StartInfo = info };
+                process.OutputDataReceived += (s, e) => { if (e.Data != null) Log(e.Data); };
+                process.ErrorDataReceived += (s, e) => { if (e.Data != null) Log(e.Data); };
+                try { if (!process.Start()) throw new IOException("Renode n'a pas demarre."); }
+                catch { process.Dispose(); throw; }
+                renode = process;
+                renode.BeginOutputReadLine(); renode.BeginErrorReadLine();
+                Log("Amorcage du firmware...");
+                socket = await Connecter(renode, token);
+                // La connexion seule ne prouve pas que le serveur peut fournir une image.
+                byte[] first = await ReadFrame(socket.GetStream(), token);
+                try { ecran.Afficher(first); }
+                finally { ArrayPool<byte>.Shared.Return(first); }
+                sessionReady = enMarche = started = true;
+                startButton.Text = "Arreter";
+                imageTimer.Start();
+                fluxImages = BoucleImages(socket, token);
+                ecran.Focus();
+                Log("Calculatrice demarree.");
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                Log("Renode n'a pas demarre : " + ex.Message);
-                startButton.Enabled = true;
-                startButton.Text = "Demarrer la calculatrice";
-                return;
+                Log(session?.IsCancellationRequested == true ? "Demarrage annule." : "Delai de demarrage depasse : aucun ecran disponible.");
             }
-
-            renode.OutputDataReceived += (s, a) => { if (a.Data != null) Log(a.Data); };
-            renode.ErrorDataReceived += (s, a) => { if (a.Data != null) Log(a.Data); };
-            renode.BeginOutputReadLine();
-            renode.BeginErrorReadLine();
-
-            //  Le demarrage prend une dizaine de secondes : amorcage du firmware,
-            //  puis les deux appels a node qui injectent les scripts.
-            TcpClient client = await Task.Run(() => Connecter(60));
-            if (client == null)
-            {
-                Log("L'ecran ne repond pas. Regarde le journal ci-dessus.");
-                await Arreter();
-                return;
-            }
-
-            socket = client;
-            enMarche = true;
-            fluxImages = new Thread(BoucleImages) { IsBackground = true };
-            fluxImages.Start();
-
-            startButton.Enabled = true;
-            startButton.Text = "Arreter";
-            SetControlsEnabled(false);
-            ecran.Focus();
-            Log("Calculatrice demarree. Tape au clavier, l'ecran a le focus.");
+            catch (Exception ex) { Log("Demarrage impossible : " + ex.Message); }
+            finally { lifecycle.Release(); }
+            if (!started) await Arreter();
         }
 
-        private static bool PortOccupe()
+        private async Task<TcpClient> Connecter(Process process, CancellationToken token)
         {
-            try
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(StartupTimeoutSeconds));
+            while (true)
             {
-                using var essai = new TcpClient();
-                essai.Connect("127.0.0.1", PortEcran);
-                return true;
-            }
-            catch (SocketException)
-            {
-                return false;
-            }
-        }
-
-        private TcpClient Connecter(int secondes)
-        {
-            var fin = DateTime.UtcNow.AddSeconds(secondes);
-            while (DateTime.UtcNow < fin)
-            {
-                if (renode != null && renode.HasExited) return null;
+                timeout.Token.ThrowIfCancellationRequested();
+                if (process.HasExited) throw new IOException("Renode s'est ferme (code " + process.ExitCode + "). Consulte le journal.");
+                var client = new TcpClient { NoDelay = true };
                 try
                 {
-                    var c = new TcpClient();
-                    c.Connect("127.0.0.1", PortEcran);
-                    c.NoDelay = true;
-                    return c;
+                    await client.ConnectAsync("127.0.0.1", PortEcran, timeout.Token);
+                    return client;
                 }
-                catch (SocketException)
-                {
-                    Thread.Sleep(400);
-                }
+                catch (SocketException) { client.Dispose(); }
+                catch { client.Dispose(); throw; }
+                await Task.Delay(250, timeout.Token);
             }
-            return null;
         }
 
-        //  Un octet de requete, une trame RGB565 en reponse. On plafonne a ~30
-        //  images par seconde : au-dela on ne gagne rien, la dalle emulee n'est
-        //  de toute facon rafraichie que quand le firmware ecrit dedans.
-        private void BoucleImages()
+        private static async Task<byte[]> ReadFrame(NetworkStream stream, CancellationToken token)
         {
-            int taille = EcranPanel.LargeurEcran * EcranPanel.HauteurEcran * 2;
-            //  Deux tampons en alternance. Le fil interface lit celui qu'on
-            //  vient de lui passer pendant qu'on remplit l'autre : sans ce
-            //  decouplage il faudrait copier chaque trame, et avec un tampon
-            //  unique il verrait une image a moitie remplacee.
-            byte[][] tampons = { new byte[taille], new byte[taille] };
-            int courant = 0;
-            var demande = new byte[] { 1 };
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromSeconds(FrameTimeoutSeconds));
+            int size = EcranPanel.LargeurEcran * EcranPanel.HauteurEcran * 2;
+            byte[] frame = ArrayPool<byte>.Shared.Rent(size);
             try
             {
-                var flux = socket.GetStream();
-                while (enMarche)
-                {
-                    byte[] trame = tampons[courant];
-                    courant = 1 - courant;
+                await stream.WriteAsync(new byte[] { 1 }, timeout.Token);
+                await stream.ReadExactlyAsync(frame.AsMemory(0, size), timeout.Token);
+                return frame;
+            }
+            catch { ArrayPool<byte>.Shared.Return(frame); throw; }
+        }
 
-                    flux.Write(demande, 0, 1);
-                    int lu = 0;
-                    while (lu < taille)
+        private async Task BoucleImages(TcpClient client, CancellationToken token)
+        {
+            try
+            {
+                while (true)
+                {
+                    byte[] frame = await ReadFrame(client.GetStream(), token).ConfigureAwait(false);
+                    lock (frameLock)
                     {
-                        int n = flux.Read(trame, lu, taille - lu);
-                        if (n <= 0) return;
-                        lu += n;
+                        if (latestFrame != null) ArrayPool<byte>.Shared.Return(latestFrame);
+                        latestFrame = frame;
                     }
-                    if (!Afficher(trame)) return;
-                    Thread.Sleep(PeriodeImageMs);
+                    await Task.Delay(PeriodeImageMs, token).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)
             {
-                //  A l'arret on ferme la socket sous les pieds de ce fil : la
-                //  levee est alors normale. Autrement, elle compte.
-                if (enMarche) Log("Flux d'images interrompu : " + ex.Message);
+                if (!token.IsCancellationRequested)
+                {
+                    Log("Connexion a l'ecran perdue : " + ex.Message);
+                    Post(async () => { if (socket == client) await Arreter(); });
+                }
             }
         }
 
-        //  Rend false quand il n'y a plus de fenetre a qui parler.
-        private bool Afficher(byte[] trame)
+        private void RenderLatestFrame()
         {
-            if (!IsHandleCreated || IsDisposed) return false;
-            try
-            {
-                BeginInvoke(new Action(() =>
-                {
-                    try
-                    {
-                        ecran.Afficher(trame);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Une exception sur le fil interface tuerait
-                        // l'application : mieux vaut un ecran fige et un
-                        // message que la fenetre qui disparait.
-                        enMarche = false;
-                        Log("Affichage impossible : " + ex.Message);
-                    }
-                }));
-                return true;
-            }
-            catch (Exception)
-            {
-                //  Fenetre fermee entre le test et l'appel : course inevitable,
-                //  et sans consequence puisqu'on s'arrete.
-                return false;
-            }
+            byte[] frame;
+            lock (frameLock) { frame = latestFrame; latestFrame = null; }
+            if (frame == null) return;
+            try { if (enMarche) ecran.Afficher(frame); }
+            catch (Exception ex) { Log("Affichage : " + ex.Message); Post(async () => await Arreter()); }
+            finally { ArrayPool<byte>.Shared.Return(frame); }
         }
 
         private async Task Arreter()
         {
-            startButton.Enabled = false;
-            startButton.Text = "Arret...";
-            enMarche = false;
-
-            //  Fermer la socket est ce qui debloque le fil d'images, arrete sur
-            //  un Read. Une levee ici signifie qu'elle l'etait deja.
-            try { socket?.Close(); } catch (Exception) { }
-            socket = null;
-
-            if (renode != null)
+            // Annule aussi une connexion en cours avant d'attendre le verrou de cycle de vie.
+            session?.Cancel();
+            await lifecycle.WaitAsync();
+            if (session == null) { lifecycle.Release(); return; }
+            try
             {
-                if (!renode.HasExited)
+                startButton.Enabled = false; startButton.Text = "Arret et sauvegarde...";
+                enMarche = false; imageTimer.Stop();
+                socket?.Dispose();
+                if (fluxImages != null) await fluxImages;
+                fluxImages = null; socket = null;
+                lock (frameLock)
                 {
-                    try
-                    {
-                        renode.StandardInput.WriteLine("quit");
-                        renode.StandardInput.Flush();
-                    }
-                    catch (Exception ex)
-                    {
-                        Log("Renode ne recoit plus de commandes : " + ex.Message);
-                    }
-                    await Task.Run(() =>
-                    {
-                        if (renode.WaitForExit(DelaiArretMs)) return;
-                        Log("Renode ne s'arrete pas, on le termine.");
-                        try { renode.Kill(true); }
-                        catch (Exception ex) { Log("Arret force impossible : " + ex.Message); }
-                    });
+                    if (latestFrame != null) ArrayPool<byte>.Shared.Return(latestFrame);
+                    latestFrame = null;
                 }
-                renode.Dispose();
-                renode = null;
+                if (renode != null)
+                {
+                    if (!renode.HasExited)
+                    {
+                        // Pause avant le dernier vidage : le firmware ne modifie plus les records.
+                        if (sessionReady)
+                        {
+                            Commande("pause");
+                            Commande("mem SaveSram \"" + sessionDump.Replace('\\', '/') + "\"");
+                        }
+                        Commande("quit");
+                        using var timeout = new CancellationTokenSource(DelaiArretMs);
+                        try { await renode.WaitForExitAsync(timeout.Token); }
+                        catch (OperationCanceledException)
+                        {
+                            Log("Renode ne repond plus : arret du processus lance par EmuWorks.");
+                            renode.Kill(true);
+                            using var killTimeout = new CancellationTokenSource(DelaiArretMs);
+                            await renode.WaitForExitAsync(killTimeout.Token);
+                        }
+                    }
+                    renode.Dispose(); renode = null;
+                }
+                if (sessionReady && File.Exists(sessionDump))
+                {
+                    if (!await RunTool("pull", sessionDump, RomDir))
+                        Log("Import refuse : les scripts precedents sont conserves. Vidage : " + sessionDump);
+                }
+                else Log("Aucune sauvegarde valide de cette session a importer. Scripts conserves.");
             }
-            touchesEnfoncees.Clear();
-
-            ecran.Allume = false;
-            ecran.Invalidate();
-
-            string vidage = Path.Combine(RomDir, "sram.bin");
-            if (File.Exists(vidage))
+            catch (Exception ex) { Log("Arret incomplet : " + ex.Message); }
+            finally
             {
-                Log("Enregistrement du dossier...");
-                await Task.Run(() => Lancer("node",
-                    Quote(RomTool) + " pull " + Quote(vidage) + " " + Quote(RomDir), baseDir));
+                // Si un processus refuse meme Kill, garder sa reference pour pouvoir reessayer.
+                bool remaining = renode != null && !renode.HasExited;
+                if (!remaining)
+                {
+                    renode?.Dispose(); renode = null;
+                    session?.Dispose(); session = null;
+                    sessionLease?.Dispose(); sessionLease = null;
+                    sessionReady = false;
+                }
+                touchesEnfoncees.Clear();
+                ecran.Allume = false; ecran.Invalidate();
+                RefreshScripts(); RefreshFirmwares();
+                SetControlsEnabled(!remaining);
+                startButton.Enabled = true;
+                startButton.Text = remaining ? "Reessayer l'arret" : "Demarrer la calculatrice";
+                lifecycle.Release();
+                if (!remaining) CheckEnvironment();
             }
-            else
-            {
-                // La calculatrice n'a jamais atteint la premiere sauvegarde
-                // automatique : rien a enregistrer, et surtout rien qui
-                // justifie de toucher a scripts\.
-                Log("Aucun vidage memoire : le dossier est laisse intact.");
-            }
-
-            RefreshScripts();
-            RefreshFirmwares();
-            SetControlsEnabled(true);
-            startButton.Enabled = true;
-            startButton.Text = "Demarrer la calculatrice";
         }
 
-        //  Filet de securite : si la calculatrice plante avant d'initialiser son
-        //  stockage, on veut pouvoir revenir en arriere.
-        private void SauvegarderScripts()
+        private async Task<bool> RunTool(params string[] arguments)
         {
             try
             {
-                if (!Directory.Exists(ScriptsDir)) return;
-                string sauvegarde = Path.Combine(RomDir, ".scripts-precedents");
-                if (Directory.Exists(sauvegarde)) Directory.Delete(sauvegarde, true);
-                Directory.CreateDirectory(sauvegarde);
-                foreach (var f in Directory.GetFiles(ScriptsDir))
+                var info = new ProcessStartInfo("node")
                 {
-                    File.Copy(f, Path.Combine(sauvegarde, Path.GetFileName(f)), true);
+                    WorkingDirectory = baseDir, UseShellExecute = false, CreateNoWindow = true,
+                    RedirectStandardOutput = true, RedirectStandardError = true
+                };
+                info.ArgumentList.Add(RomTool);
+                foreach (var arg in arguments) info.ArgumentList.Add(arg);
+                using var process = Process.Start(info);
+                Task<string> output = process.StandardOutput.ReadToEndAsync();
+                Task<string> errors = process.StandardError.ReadToEndAsync();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                try { await process.WaitForExitAsync(timeout.Token); }
+                catch (OperationCanceledException)
+                {
+                    process.Kill(true);
+                    using var killTimeout = new CancellationTokenSource(DelaiArretMs);
+                    await process.WaitForExitAsync(killTimeout.Token);
+                    throw new IOException("Synchronisation trop longue, interrompue.");
                 }
+                foreach (var line in Lignes(await output)) Log(line);
+                foreach (var line in Lignes(await errors)) Log(line);
+                return process.ExitCode == 0;
             }
-            catch (Exception ex) { Log("Sauvegarde impossible : " + ex.Message); }
+            catch (Exception ex) { Log("Outil scripts : " + ex.Message); return false; }
         }
+
 
         // --- clavier ----------------------------------------------------------
         //  Le moniteur Renode reste accessible pendant que la machine tourne :
@@ -1007,30 +1063,7 @@ namespace EmuWorks
         }
 
         // --- divers -----------------------------------------------------------
-        private void Lancer(string programme, string arguments, string dossier)
-        {
-            try
-            {
-                var info = new ProcessStartInfo(programme, arguments)
-                {
-                    WorkingDirectory = dossier,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                using var process = Process.Start(info);
-                string sortie = process.StandardOutput.ReadToEnd();
-                string erreurs = process.StandardError.ReadToEnd();
-                process.WaitForExit();
-                foreach (var l in Lignes(sortie)) Log(l);
-                foreach (var l in Lignes(erreurs)) Log(l);
-            }
-            catch (Exception ex)
-            {
-                Log("Echec de " + programme + " : " + ex.Message);
-            }
-        }
+
 
         private static IEnumerable<string> Lignes(string texte)
         {
@@ -1046,35 +1079,48 @@ namespace EmuWorks
         private void SetControlsEnabled(bool valeur)
         {
             installButton.Enabled = valeur;
+            importButton.Enabled = valeur;
+            restoreButton.Enabled = valeur;
+            scriptList.Enabled = valeur;
+            folderButton.Enabled = valeur;
             firmwareBox.Enabled = valeur;
             serieBox.Enabled = valeur;
             addButton.Enabled = valeur;
             removeButton.Enabled = valeur;
         }
 
+        private void Post(Action action)
+        {
+            if (IsDisposed || Disposing || !IsHandleCreated) return;
+            try { BeginInvoke(new Action(() => { if (!IsDisposed && !Disposing) action(); })); }
+            catch (InvalidOperationException) { /* fermeture en cours */ }
+        }
+
         private void Log(string message)
         {
-            if (logBox.InvokeRequired)
-            {
-                try { logBox.BeginInvoke(new Action<string>(Log), message); } catch { }
-                return;
-            }
+            if (IsDisposed || Disposing) return;
+            if (InvokeRequired) { Post(() => Log(message)); return; }
             if (logBox.Lines.Length > 500) logBox.Clear();
             logBox.AppendText(message + Environment.NewLine);
         }
 
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            imageTimer.Dispose();
+            base.OnFormClosed(e);
+        }
+
+
         protected override async void OnFormClosing(FormClosingEventArgs e)
         {
-            if (enMarche)
-            {
-                //  On ne ferme pas sans enregistrer : l'arret ecrit les scripts
-                //  de la calculatrice dans le dossier.
-                e.Cancel = true;
-                await Arreter();
-                Close();
-                return;
-            }
-            base.OnFormClosing(e);
+            if (closeAllowed) { base.OnFormClosing(e); return; }
+            e.Cancel = true;
+            if (closing) return;
+            closing = true;
+            await Arreter();
+            if (renode != null) { closing = false; return; }
+            closeAllowed = true;
+            Close();
         }
     }
 }

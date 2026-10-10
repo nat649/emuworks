@@ -95,6 +95,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 this.Log(LogLevel.Info, "0x{0:X8}..0x{1:X8} ({2} octets) -> {3}",
                     address, address + count - 1, count, path);
             }
+            else { throw new IOException("Le vidage memoire a echoue : " + path); }
         }
 
         public void Load(string path, long address)
@@ -105,7 +106,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 if(!File.Exists(path))
                 {
                     this.Log(LogLevel.Warning, "Fichier introuvable : {0}", path);
-                    return;
+                    throw new FileNotFoundException("Image memoire introuvable", path);
                 }
                 byte[] data = File.ReadAllBytes(path);
                 machine.GetSystemBus(this).WriteBytes(data, (ulong)address, false, null);
@@ -114,6 +115,7 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             catch(Exception e)
             {
                 this.Log(LogLevel.Error, "Echec du chargement : {0}", e.Message);
+                throw;
             }
         }
 
@@ -206,20 +208,24 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
                 {
                     info.WorkingDirectory = racine;
                 }
-                var process = System.Diagnostics.Process.Start(info);
-                string output = process.StandardOutput.ReadToEnd();
-                string errors = process.StandardError.ReadToEnd();
-                process.WaitForExit();
-                LogLines(output, LogLevel.Info);
-                LogLines(errors, LogLevel.Warning);
-                if(process.ExitCode != 0)
+                using(var process = System.Diagnostics.Process.Start(info))
                 {
-                    this.Log(LogLevel.Error, "{0} a rendu le code {1}", program, process.ExitCode);
+                    var output = process.StandardOutput.ReadToEndAsync();
+                    var errors = process.StandardError.ReadToEndAsync();
+                    if(!process.WaitForExit(30000))
+                    {
+                        process.Kill();
+                        throw new IOException("Outil scripts bloque pendant 30 secondes.");
+                    }
+                    LogLines(output.Result, LogLevel.Info);
+                    LogLines(errors.Result, LogLevel.Warning);
+                    if(process.ExitCode != 0) throw new IOException(program + " : code " + process.ExitCode);
                 }
             }
             catch(Exception e)
             {
                 this.Log(LogLevel.Error, "Echec de l'appel a {0} : {1}", program, e.Message);
+                throw;
             }
         }
 
@@ -229,7 +235,11 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         //  le dernier vidage en fichiers .py une fois Renode termine.
         public void AutoSave(string path, int seconds)
         {
+            lock(saveLock)
+            {
             StopTimer();
+            string sessionPath = Environment.GetEnvironmentVariable("EMUWORKS_SESSION_SRAM");
+            if(seconds > 0 && !string.IsNullOrEmpty(sessionPath)) path = sessionPath;
             autoPath = path;
             if(seconds <= 0 || string.IsNullOrEmpty(path))
             {
@@ -240,36 +250,64 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
             autoTimer.AutoReset = true;
             autoTimer.Elapsed += OnAutoTick;
             autoTimer.Start();
+            if(!SaveQuiet(path, SramBase, SramSize)) throw new IOException("Premiere sauvegarde impossible.");
             this.Log(LogLevel.Info, "Sauvegarde automatique toutes les {0} s -> {1}", seconds, path);
+            }
         }
 
         public void Dispose()
         {
+            lock(saveLock)
+            {
             StopTimer();
+            disposed = true;
             if(!string.IsNullOrEmpty(autoPath))
             {
                 SaveQuiet(autoPath, SramBase, SramSize);
+            }
             }
         }
 
         private void OnAutoTick(object sender, System.Timers.ElapsedEventArgs e)
         {
-            SaveQuiet(autoPath, SramBase, SramSize);
+            lock(saveLock)
+            {
+                if(!disposed && autoTimer != null) SaveQuiet(autoPath, SramBase, SramSize);
+            }
         }
 
         private bool SaveQuiet(string path, long address, long count)
         {
+            lock(saveLock)
+            {
+            string temporary = null;
             try
             {
                 path = Resoudre(path);
                 byte[] data = machine.GetSystemBus(this).ReadBytes((ulong)address, (int)count, false, null);
-                File.WriteAllBytes(path, data);
+                temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                using(var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    stream.Write(data, 0, data.Length);
+                    stream.Flush(true);
+                }
+                if(File.Exists(path)) File.Replace(temporary, path, null);
+                else File.Move(temporary, path);
                 return true;
             }
             catch(Exception e)
             {
                 this.Log(LogLevel.Error, "Echec du vidage : {0}", e.Message);
                 return false;
+            }
+            finally
+            {
+                if(temporary != null && File.Exists(temporary))
+                {
+                    try { File.Delete(temporary); }
+                    catch(Exception e) { this.Log(LogLevel.Warning, "Nettoyage temporaire : {0}", e.Message); }
+                }
+            }
             }
         }
 
@@ -304,6 +342,8 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         private readonly IMachine machine;
         private System.Timers.Timer autoTimer;
         private string autoPath;
+        private readonly object saveLock = new object();
+        private bool disposed;
 
         private const long SramBase = 0x20000000;
         private const long SramSize = 0x40000;
