@@ -6,13 +6,13 @@ All in a single window: Renode is launched headlessly, and its screen is forward
 
 ## Windows download
 
-Download the Windows x64 archive from [Releases](https://github.com/nat649/emuworks/releases). It includes the .NET runtime and both built-in firmwares. Install Renode separately. **For Epsilon, Omega or Upsilon, also install Node.js LTS and ensure `node --version` works in a new terminal.** Extract the complete archive to a writable path without spaces, and launch `EmuWorks.exe`. See [Windows release instructions](docs/windows-release.md).
+Download the Windows x64 archive from [Releases](https://github.com/nat649/emuworks/releases). It includes the .NET runtime and both built-in firmwares. Install Renode separately. **The current 0.2.0 development build uses native script storage and does not need Node.js. Published 0.1.x archives still require Node.js for external firmware.** Extract the complete archive to a writable path without spaces, and launch `EmuWorks.exe`. See [Windows release instructions](docs/windows-release.md).
 
 ## Built-in firmware: EmuWorks Core
 
 **EmuWorks Core 0.1** is our original MIT-licensed ARM firmware, included in the application. It provides basic arithmetic, decimals, parentheses, integer powers, `ANS` and an eight-entry session history. It runs on the emulated Cortex-M7, using the LCD bus and GPIO keyboard. Its source code and original glyphs are maintained in the separate [emuworks-core repository](https://github.com/nat649/emuworks-core). This emulator keeps the compiled firmware, its MIT license and the exact source revision in [firmware/core](firmware/core/README.md).
 
-Choose **emuworks-core-0.1 → Installer → Demarrer**. Core is installed automatically on a fresh installation; existing user firmware is preserved. This first version displays six significant digits and does not include Python, graphing or persistent history. No Epsilon/Omega code or assets are included in Core.
+Choose **EmuWorks Core → Use selected firmware → Start calculator**. Core is installed automatically on a fresh installation; existing user firmware is preserved. This first version displays six significant digits and does not include Python, graphing or persistent history. No Epsilon/Omega code or assets are included in Core.
 
 **Third-party firmware is not bundled.** To use Epsilon or Omega, supply your own matching internal/external images. The workflow `renode/build-firmware-n0110.yml` can compile Epsilon from its sources. Third-party firmware retains its own license; the project's MIT license does not relicense it.
 
@@ -35,7 +35,7 @@ To develop Core, clone [emuworks-core](https://github.com/nat649/emuworks-core) 
 | | |
 |---|---|
 | [Renode](https://renode.io) 1.16 | `winget install Renode.Renode` |
-| [Node.js LTS](https://nodejs.org/en/download) | required for backups and script synchronization with Epsilon/Omega/Upsilon; built-in Core and Code do not need it |
+| Node.js | optional developer tooling only in 0.2.0; application backups and synchronization are native |
 | .NET Desktop Runtime 8 | for the application; or `dotnet publish` from `app/` |
 
 > ⚠️ **Install the folder in a path without spaces**, for example
@@ -49,9 +49,9 @@ To develop Core, clone [emuworks-core](https://github.com/nat649/emuworks-core) 
 1. Fork [numworks/epsilon](https://github.com/numworks/epsilon).
 2. Copy `renode/build-firmware-n0110.yml` into `.github/workflows/` on your fork's default branch.
 3. Actions → **Firmware N0110 (Renode)** → Run workflow.
-4. Download the artifact and import its matching internal/external images with **Importer un firmware...**, or place them under `firmwares/<name>/internal.bin` and `firmwares/<name>/external.bin`.
+4. Download the artifact and import its matching internal/external images with **Import firmware**, or place them under `firmwares/<name>/internal.bin` and `firmwares/<name>/external.bin`.
 
-Node.js must be available on the Windows `PATH` before launching external firmware. Install the Windows LTS installer from [nodejs.org](https://nodejs.org/en/download), keep **Add to PATH** enabled, and restart EmuWorks after installation. Verify `node --version` in a new terminal. A missing `node` process prevents script backups, so startup is cancelled to preserve your scripts.
+The current application performs script backups and synchronization in C#. Its native startup helper runs from the same executable, so external firmware no longer requires Node.js. Older 0.1.x release archives still use Node.js; source changes do not update those archives.
 
 New builds save imported firmware pairs in the library under `imported-<id>` and select their entry in the dropdown. Reimporting the same pair reuses its existing entry. In release **v0.1.0**, importing only updates the active `rom/` images: to add a dropdown entry, create `firmwares/<name>/` beside `EmuWorks.exe`, put the matching images there as `internal.bin` and `external.bin`, and restart EmuWorks.
 
@@ -73,7 +73,10 @@ Launch `EmuWorks.exe`. A single window offers:
 - built-in EmuWorks Core, plus firmware selection/import from your own images;
 - Python script management: add, delete, or open them in your editor;
 - the calculator screen, controlled by your PC keyboard — scaled by an **integer** factor (2×, 3×…) to remain crisp, and centered in a frame; resizing the window scales the calculator;
-- automatic saving upon exit.
+- automatic saving upon exit and a backup browser with manual backup and restoration;
+- firmware names, versions, image sizes and installed status, with a guided import dialog;
+- configurable PC keyboard mappings, integer screen zoom and opt-in update checks;
+- a reorganized dashboard with Library, Scripts and Journal tabs.
 
 ### The `rom/` folder **is** the calculator
 
@@ -120,6 +123,6 @@ The peripheral models describe the hardware of the STM32F730 and the N0110 board
 
 ## Backup history and reliable shutdown
 
-The application now includes **Importer un firmware...** (select the internal and external images from the same N0110 build) and **Restaurer une sauvegarde...**. Script versions are stored under `rom/sauvegardes/`, with SHA-256 integrity checks. Shutdown pauses the machine before the last memory dump; cancelled startup never imports an older session's memory. A forced shutdown may recover an earlier periodic save.
+The application now includes **Import firmware** (select the internal and external images from the same N0110 build) and **Restaurer une sauvegarde...**. Script versions are stored under `rom/sauvegardes/`, with SHA-256 integrity checks. Shutdown pauses the machine before the last memory dump; cancelled startup never imports an older session's memory. A forced shutdown may recover an earlier periodic save.
 
-See [backup, recovery and testing instructions](docs/fiabilite.md). These backups cover Python scripts with compatible external firmware, not a complete calculator snapshot. Core does not use Python storage; its history lasts for the current session only.
+See [backup, recovery and testing instructions](docs/fiabilite.md). Backups include Python source scripts (Ion or Code), the serial setting and application preferences. They do not contain a complete calculator snapshot. Core does not use Python storage; its history lasts for the current session only.

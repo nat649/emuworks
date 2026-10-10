@@ -1,0 +1,20 @@
+: EmuWorks native storage startup: no Node.js runtime is required.
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+mach add "nw"
+mach set "nw"
+machine LoadPlatformDescription @numworks_n0110.repl
+sysbus LoadBinary @../rom/internal.bin 0x08000000
+sysbus LoadBinary @../rom/external.bin 0x90000000
+cpu VectorTableOffset 0x08000000
+mem SerialFromFile "rom/serie.txt"
+emulation RunFor "3"
+mem SaveSram "rom/sram.bin"
+mem SyncScripts
+i @../rom/load.resc
+mem AutoSave "rom/sram.bin" 5
+lcd Serve 3555
+start

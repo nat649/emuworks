@@ -63,3 +63,7 @@ rom/code-scripts/
 
 # Local release archives and build output
 releases/
+
+# Local application preferences and independent script rollback data
+/settings.json
+rom/.code-scripts-*/

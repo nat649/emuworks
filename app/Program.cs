@@ -34,7 +34,21 @@ namespace EmuWorks
         [STAThread]
         static void Main(string[] args)
         {
+            if (args.Length > 0 && args[0] == "--storage")
+            {
+                try { ScriptStorage.Execute(args.Skip(1).ToArray()); }
+                catch (Exception ex) { Console.Error.WriteLine(ex.Message); Environment.ExitCode = 1; }
+                return;
+            }
             ApplicationConfiguration.Initialize();
+            if (args.Length == 2 && args[0] == "--preview-app")
+            {
+                using var form = new MainForm { ShowInTaskbar = false, Opacity = 0 };
+                form.Show(); form.PerformLayout(); Application.DoEvents();
+                using var bitmap = new Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+                bitmap.Save(args[1], ImageFormat.Png); return;
+            }
             //  Mode apercu : rend le panneau ecran dans un PNG, sans ouvrir de
             //  fenetre. Sert a verifier l'apparence depuis un terminal.
             //    EmuWorks.exe --apercu <trame.raw RGB888> <sortie.png> [largeur hauteur]
@@ -123,6 +137,7 @@ namespace EmuWorks
         }
 
         public bool Allume { get; set; }
+        public int Zoom { get; set; }
 
         //  Appelee depuis le fil interface uniquement.
         public void Afficher(byte[] rgb565)
@@ -149,13 +164,14 @@ namespace EmuWorks
         //  cherche le plus grand agrandissement ENTIER qui rentre, et on centre.
         //  Un facteur non entier (2,3x par exemple) dedouble une ligne de pixels
         //  sur trois -- le texte de la calculatrice en devient bancal.
-        private static Rectangle ZoneDalle(Rectangle panneau)
+        private Rectangle ZoneDalle(Rectangle panneau)
         {
             const int marge = 26;
             int largeurDispo = Math.Max(1, panneau.Width - 2 * marge);
             int hauteurDispo = Math.Max(1, panneau.Height - 2 * marge);
             int facteur = Math.Min(largeurDispo / LargeurEcran, hauteurDispo / HauteurEcran);
             if (facteur < 1) facteur = 1;
+            if (Zoom > 0) facteur = Math.Min(facteur, Zoom);
             int l = LargeurEcran * facteur, h = HauteurEcran * facteur;
             return new Rectangle(panneau.X + (panneau.Width - l) / 2,
                                  panneau.Y + (panneau.Height - h) / 2, l, h);
@@ -222,7 +238,7 @@ namespace EmuWorks
                     Alignment = StringAlignment.Center,
                     LineAlignment = StringAlignment.Center
                 };
-                g.DrawString("Calculatrice arretee", police, texte, dalle, format);
+                g.DrawString("Calculator stopped", police, texte, dalle, format);
                 return;
             }
 
@@ -234,7 +250,7 @@ namespace EmuWorks
         }
     }
 
-    public class MainForm : Form
+    public partial class MainForm : Form
     {
         private readonly int PortEcran = 3555;
         private const int PeriodeImageMs = 33;      // ~30 images par seconde
@@ -292,6 +308,10 @@ namespace EmuWorks
         private string FirmwaresDir => Path.Combine(baseDir, "firmwares");
         private string RenodeDir => Path.Combine(baseDir, "renode");
         private string RomTool => Path.Combine(RenodeDir, "tools", "rom.js");
+        private AppSettings settings = new();
+        private Label firmwareDetails;
+        private Button backupsButton, settingsButton, updatesButton;
+        private string selectedFirmwareDirectory;
 
         private ComboBox firmwareBox;
         private GroupBox scriptsGroup;
@@ -325,6 +345,8 @@ namespace EmuWorks
         {
             baseDir = ResolveBaseDir();
             BuildUi();
+            try { settings = AppSettings.Load(baseDir); ApplySettings(); }
+            catch (Exception ex) { Log("Settings: " + ex.Message); }
             try
             {
                 using var lease = AcquireLease();
@@ -339,6 +361,7 @@ namespace EmuWorks
             imageTimer.Tick += (s, e) => RenderLatestFrame();
             SetControlsEnabled(true);
             CheckEnvironment();
+            Shown += async (_, _) => { if (settings.CheckUpdatesOnLaunch) await CheckUpdates(false); };
         }
 
         // --- numero de serie --------------------------------------------------
@@ -392,98 +415,7 @@ namespace EmuWorks
             return @"C:\EmuWorks";
         }
 
-        private void BuildUi()
-        {
-            Text = "EmuWorks";
-            //  Le panneau ecran doit loger 2x la dalle (640x480) PLUS la marge
-            //  et le cadre, sinon l'agrandissement entier retombe a 1x.
-            ClientSize = new Size(1102, 688);
-            MinimumSize = new Size(1118, 727);
-            Font = new Font("Segoe UI", 9F);
-            StartPosition = FormStartPosition.CenterScreen;
-            KeyPreview = true;
-
-            var firmwareLabel = new Label { Text = "Firmware :", AutoSize = true, Location = new Point(14, 17) };
-            firmwareBox = new ComboBox
-            {
-                Location = new Point(88, 13), Width = 172,
-                DropDownStyle = ComboBoxStyle.DropDownList
-            };
-            installButton = new Button { Text = "Installer", Location = new Point(266, 12), Width = 78 };
-            installButton.Click += OnInstallFirmware;
-            importButton = new Button { Text = "Importer un firmware...", Location = new Point(688, 12), Width = 184 };
-            importButton.Click += OnImportFirmware;
-
-            //  Epsilon ne stocke pas de numero de serie : il encode l'identifiant
-            //  unique du processeur. On le choisit donc librement.
-            var serieLabel = new Label
-            {
-                Text = "Numero de serie :", AutoSize = true, Location = new Point(358, 17)
-            };
-            serieBox = new TextBox
-            {
-                Location = new Point(468, 13), Width = 200, MaxLength = 64,
-                PlaceholderText = "EmuWorks"
-            };
-            serieBox.Leave += (s, e) => EnregistrerSerie();
-
-            scriptsGroup = new GroupBox
-            {
-                Text = "Scripts Python", Location = new Point(14, 48), Size = new Size(330, 330)
-            };
-            scriptList = new ListBox
-            {
-                Location = new Point(12, 24), Size = new Size(306, 216), IntegralHeight = false
-            };
-            scriptList.DoubleClick += OnOpenScript;
-            addButton = new Button { Text = "Ajouter...", Location = new Point(12, 290), Width = 96 };
-            addButton.Click += OnAddScript;
-            removeButton = new Button { Text = "Supprimer", Location = new Point(116, 290), Width = 96 };
-            removeButton.Click += OnRemoveScript;
-            folderButton = new Button { Text = "Dossier", Location = new Point(220, 290), Width = 96 };
-            folderButton.Click += (s, e) => OpenInShell(ScriptsDir);
-            restoreButton = new Button { Text = "Restaurer une sauvegarde...", Location = new Point(12, 248), Width = 304 };
-            restoreButton.Click += OnRestoreScripts;
-            scriptsGroup.Controls.AddRange(new Control[] { scriptList, addButton, removeButton, folderButton, restoreButton });
-
-            var logLabel = new Label { Text = "Journal :", AutoSize = true, Location = new Point(14, 388) };
-            logBox = new TextBox
-            {
-                Location = new Point(14, 408), Size = new Size(330, 260),
-                Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-                Font = new Font("Consolas", 8.5F), BackColor = Color.White, TabStop = false,
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom
-            };
-
-            //  L'ecran suit la taille de la fenetre : agrandir la fenetre agrandit
-            //  la calculatrice, par bonds entiers (2x, 3x...) pour rester net.
-            ecran = new EcranPanel
-            {
-                Location = new Point(358, 48), Size = new Size(730, 570),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
-            };
-
-            startButton = new Button
-            {
-                Text = "Demarrer la calculatrice",
-                Location = new Point(358, 630), Size = new Size(240, 44),
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                Anchor = AnchorStyles.Left | AnchorStyles.Bottom
-            };
-            startButton.Click += OnStartStop;
-
-            statusLabel = new Label
-            {
-                Location = new Point(612, 644), AutoSize = true, ForeColor = Color.DimGray,
-                Anchor = AnchorStyles.Left | AnchorStyles.Bottom
-            };
-
-            Controls.AddRange(new Control[]
-            {
-                firmwareLabel, firmwareBox, installButton, importButton, serieLabel, serieBox,
-                scriptsGroup, logLabel, logBox, ecran, startButton, statusLabel
-            });
-        }
+        private void BuildUi() => BuildDashboard();
 
         private void CheckEnvironment()
         {
@@ -559,14 +491,12 @@ namespace EmuWorks
         private void OnImportFirmware(object sender, EventArgs e)
         {
             if (session != null) return;
-            using var inside = new OpenFileDialog { Title = "Choisir l'image interne (internal.bin ou epsilon.internal.bin)", Filter = "Image binaire (*.bin)|*.bin" };
-            if (inside.ShowDialog(this) != DialogResult.OK) return;
-            using var outside = new OpenFileDialog { Title = "Choisir l'image externe correspondante (external.bin)", Filter = "Image binaire (*.bin)|*.bin", InitialDirectory = Path.GetDirectoryName(inside.FileName) };
-            if (outside.ShowDialog(this) != DialogResult.OK) return;
-            InstallFirmware(inside.FileName, outside.FileName, keepInLibrary: true);
+            using var dialog = new FirmwareImportDialog();
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            InstallFirmware(dialog.InternalPath, dialog.ExternalPath, keepInLibrary: true, dialog.Information);
         }
 
-        private void InstallFirmware(string inside, string outside, bool keepInLibrary = false)
+        private void InstallFirmware(string inside, string outside, bool keepInLibrary = false, FirmwareInfo information = null)
         {
             try
             {
@@ -576,6 +506,7 @@ namespace EmuWorks
                     string imported = FirmwareStore.ImportToLibrary(inside, outside, FirmwaresDir);
                     inside = Path.Combine(imported, "internal.bin");
                     outside = Path.Combine(imported, "external.bin");
+                    if (information != null) information.Save(imported);
                     Log("Firmware saved to library: " + Path.GetFileName(imported));
                 }
                 FirmwareStore.Install(inside, outside, RomDir);
@@ -594,12 +525,7 @@ namespace EmuWorks
         private async void OnRestoreScripts(object sender, EventArgs e)
         {
             if (session != null) return;
-            using var dialog = new OpenFileDialog
-            {
-                Title = "Choisir le manifest.json de la sauvegarde a restaurer",
-                Filter = "Sauvegarde (manifest.json)|manifest.json",
-                InitialDirectory = Path.Combine(RomDir, "sauvegardes")
-            };
+            using var dialog = new BackupsDialog(RomDir);
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             await lifecycle.WaitAsync();
             if (closing) { lifecycle.Release(); return; }
@@ -607,7 +533,10 @@ namespace EmuWorks
             try
             {
                 using var lease = AcquireLease();
-                if (await RunTool("restore", RomDir, Path.GetDirectoryName(dialog.FileName))) RefreshScripts();
+                if (await RunTool("restore", RomDir, dialog.SelectedBackup))
+                {
+                    settings = AppSettings.Load(baseDir); ApplySettings(); ChargerSerie(); RefreshScripts();
+                }
             }
             catch (Exception ex) { Log("Restauration refusee : " + ex.Message); }
             finally
@@ -636,7 +565,7 @@ namespace EmuWorks
         {
             using var dlg = new OpenFileDialog
             {
-                Title = "Ajouter un script Python",
+                Title = "Add Python scripts",
                 Filter = "Scripts Python (*.py)|*.py",
                 Multiselect = true
             };
@@ -668,7 +597,7 @@ namespace EmuWorks
         {
             if (scriptList.SelectedItem == null) return;
             string nom = scriptList.SelectedItem.ToString();
-            if (MessageBox.Show(this, "Supprimer " + nom + " ?", "Confirmer",
+            if (MessageBox.Show(this, "Remove " + nom + "?", "Confirm removal",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             await EditScripts(() =>
             {
@@ -692,7 +621,7 @@ namespace EmuWorks
             try
             {
                 using var lease = AcquireLease();
-                if (CodeInstalled || await RunTool("backup", RomDir)) edit();
+                if (await RunTool("backup", RomDir)) edit();
             }
             catch (Exception ex) { Log("Modification refusee : " + ex.Message); }
             finally
@@ -746,7 +675,7 @@ namespace EmuWorks
 
                 var token = session.Token;
                 SetControlsEnabled(false);
-                startButton.Text = "Annuler le demarrage";
+                startButton.Text = "Cancel startup";
                 if (!coreSession && !codeSession && !await RunTool("backup", RomDir)) throw new IOException("La sauvegarde des scripts a echoue. Demarrage annule.");
                 token.ThrowIfCancellationRequested();
                 EnregistrerSerie();
@@ -755,7 +684,7 @@ namespace EmuWorks
                 sessionDump = Path.Combine(sessions, Guid.NewGuid().ToString("N") + ".bin");
                 sessionReady = false;
 
-                string bootScript = codeSession ? "emuworks-code.resc" : coreSession ? "emuworks-core.resc" : "numworks-embarque.resc";
+                string bootScript = codeSession ? "emuworks-code.resc" : coreSession ? "emuworks-core.resc" : "numworks-native.resc";
                 var info = new ProcessStartInfo(RenodeExe,
                     "--console --disable-xwt --hide-log -e \"i @" + bootScript + "\"")
                 {
@@ -764,6 +693,7 @@ namespace EmuWorks
                 };
                 info.Environment["EMUWORKS_BASE"] = baseDir;
                 info.Environment["EMUWORKS_SESSION_SRAM"] = sessionDump;
+                info.Environment["EMUWORKS_STORAGE_EXE"] = Environment.ProcessPath;
                 var process = new Process { StartInfo = info };
                 process.OutputDataReceived += (s, e) => { if (e.Data != null) Log(e.Data); };
                 process.ErrorDataReceived += (s, e) => { if (e.Data != null) Log(e.Data); };
@@ -778,7 +708,7 @@ namespace EmuWorks
                 try { ecran.Afficher(first); }
                 finally { ArrayPool<byte>.Shared.Return(first); }
                 sessionReady = enMarche = started = true;
-                startButton.Text = "Arreter";
+                startButton.Text = "Stop calculator";
                 imageTimer.Start();
                 fluxImages = BoucleImages(socket, token);
                 ecran.Focus();
@@ -871,7 +801,7 @@ namespace EmuWorks
             if (session == null) { lifecycle.Release(); return; }
             try
             {
-                startButton.Enabled = false; startButton.Text = "Arret et sauvegarde...";
+                startButton.Enabled = false; startButton.Text = "Stopping and saving...";
                 enMarche = false; imageTimer.Stop();
                 socket?.Dispose();
                 if (fluxImages != null) await fluxImages;
@@ -930,7 +860,7 @@ namespace EmuWorks
                 RefreshScripts(); RefreshFirmwares();
                 SetControlsEnabled(!remaining);
                 startButton.Enabled = true;
-                startButton.Text = remaining ? "Reessayer l'arret" : "Demarrer la calculatrice";
+                startButton.Text = remaining ? "Retry stop" : "Start calculator";
                 lifecycle.Release();
                 if (!remaining) CheckEnvironment();
             }
@@ -940,38 +870,12 @@ namespace EmuWorks
         {
             try
             {
-                var info = new ProcessStartInfo("node")
-                {
-                    WorkingDirectory = baseDir, UseShellExecute = false, CreateNoWindow = true,
-                    RedirectStandardOutput = true, RedirectStandardError = true
-                };
-                info.ArgumentList.Add(RomTool);
-                foreach (var arg in arguments) info.ArgumentList.Add(arg);
-                using var process = Process.Start(info);
-                Task<string> output = process.StandardOutput.ReadToEndAsync();
-                Task<string> errors = process.StandardError.ReadToEndAsync();
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                try { await process.WaitForExitAsync(timeout.Token); }
-                catch (OperationCanceledException)
-                {
-                    process.Kill(true);
-                    using var killTimeout = new CancellationTokenSource(DelaiArretMs);
-                    await process.WaitForExitAsync(killTimeout.Token);
-                    throw new IOException("Synchronisation trop longue, interrompue.");
-                }
-                foreach (var line in Lignes(await output)) Log(line);
-                foreach (var line in Lignes(await errors)) Log(line);
-                return process.ExitCode == 0;
+                await Task.Run(() => ScriptStorage.Execute(arguments));
+                Log("Storage operation completed: " + arguments[0]);
+                return true;
             }
-            catch (Win32Exception ex) when (ex.NativeErrorCode == 2)
-            {
-                Log("Node.js could not be found. Install Node.js LTS from https://nodejs.org/en/download, then restart EmuWorks. External firmware requires it for script backups and synchronization.");
-                return false;
-            }
-            catch (Exception ex) { Log("Outil scripts : " + ex.Message); return false; }
+            catch (Exception ex) { Log("Script storage: " + ex.Message); return false; }
         }
-
-
         // --- clavier ----------------------------------------------------------
         //  Le moniteur Renode reste accessible pendant que la machine tourne :
         //  chaque touche devient une commande sur son entree standard.
@@ -1039,7 +943,7 @@ namespace EmuWorks
             if (enMarche && Enfoncer(e.KeyCode))
             {
                 e.Handled = true;
-                e.SuppressKeyPress = Touches.ContainsKey(e.KeyCode);
+                e.SuppressKeyPress = TryBinding(e.KeyCode, out _);
             }
             base.OnKeyDown(e);
         }
@@ -1049,7 +953,7 @@ namespace EmuWorks
             if (enMarche)
             {
                 string nom;
-                if (Touches.TryGetValue(e.KeyCode, out nom)) Relacher(nom);
+                if (TryBinding(e.KeyCode, out nom)) Relacher(nom);
                 RelacherTout();
                 e.Handled = true;
             }
@@ -1081,7 +985,7 @@ namespace EmuWorks
         private bool Enfoncer(Keys code)
         {
             string nom;
-            if (!Touches.TryGetValue(code, out nom)) return false;
+            if (!TryBinding(code, out nom)) return false;
             if (touchesEnfoncees.Contains(nom)) return true;   // repetition automatique
             touchesEnfoncees.Add(nom);
             Commande("keyboard PressKey \"" + nom + "\"");
@@ -1134,10 +1038,12 @@ namespace EmuWorks
         private void SetControlsEnabled(bool valeur)
         {
             bool python = !CoreFirmware.IsCore(Path.Combine(RomDir, "internal.bin"));
-            scriptsGroup.Text = python ? "Scripts Python" : "Python indisponible dans Core 0.1";
+            scriptsGroup.Text = python ? "Python scripts" : "Core · calculator only";
             installButton.Enabled = valeur;
             importButton.Enabled = valeur;
-            restoreButton.Enabled = valeur && python && !CodeInstalled;
+            restoreButton.Enabled = valeur;
+            backupsButton.Enabled = valeur;
+            settingsButton.Enabled = valeur;
             scriptList.Enabled = valeur && python;
             folderButton.Enabled = valeur && python;
             firmwareBox.Enabled = valeur;

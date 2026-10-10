@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using EmuWorks;
 
-internal static class Tests
+internal static partial class Tests
 {
     static readonly BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
     static string root;
@@ -16,6 +16,31 @@ internal static class Tests
     [STAThread]
     static void Main(string[] args)
     {
+        if (args.Contains("--updates-only"))
+        {
+            var latest = UpdateService.Latest().GetAwaiter().GetResult();
+            Console.WriteLine("PASS update lookup: " + latest.Version + " " + latest.Page); return;
+        }
+        if (args.Contains("--ui-preview"))
+        {
+            ApplicationConfiguration.Initialize();
+            string output = args[^1]; Directory.CreateDirectory(output);
+            using var import = new FirmwareImportDialog();
+            using var preferences = new SettingsDialog(new(), new() { [Keys.Enter] = "EXE", [Keys.F2] = "HOME" });
+            foreach (var preview in new[] { (Form: (Form)import, Name: "import.png"), (Form: (Form)preferences, Name: "settings.png") })
+            {
+                preview.Form.ShowInTaskbar = false; preview.Form.Opacity = 0; preview.Form.Show(); Application.DoEvents();
+                using var bitmap = new Bitmap(preview.Form.Width, preview.Form.Height);
+                preview.Form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, preview.Form.Size)); bitmap.Save(Path.Combine(output, preview.Name)); preview.Form.Hide();
+            }
+            return;
+        }
+        if (args.Length > 0 && args[0] == "--storage")
+        {
+            try { ScriptStorage.Execute(args.Skip(1).ToArray()); }
+            catch (Exception ex) { Console.Error.WriteLine(ex.Message); Environment.ExitCode = 1; }
+            return;
+        }
         if (args.Contains("--console")) { FakeRenode().GetAwaiter().GetResult(); return; }
         root = Path.Combine(Path.GetTempPath(), "EmuWorksTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -63,16 +88,17 @@ internal static class Tests
                         Check(Field(form, "renode") == null && Field(form, "session") == null, "Session restante");
                         Check(File.ReadAllText(Path.Combine(rom, "scripts/keep.py")).Contains("keep"), "Scripts ecrases");
                     });
-                    await Case("missing Node.js explains the dependency and preserves scripts", async () =>
+                    await Case("external firmware works without Node.js and preserves scripts", async () =>
                     {
                         string previousPath = Environment.GetEnvironmentVariable("PATH");
                         Environment.SetEnvironmentVariable("PATH", "");
                         try
                         {
+                            Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "normal");
                             await Call(form, "Demarrer");
-                            Check(Field(form, "renode") == null && Field(form, "session") == null, "Renode started without a script backup");
-                            Check(((TextBox)Field(form, "logBox")).Text.Contains("Install Node.js LTS"), "Missing dependency was not explained");
-                            Check(File.ReadAllText(Path.Combine(rom, "scripts/keep.py")).Contains("keep"), "Missing Node.js changed user scripts");
+                            Check((bool)Field(form, "enMarche"), "Native script backup failed without Node.js");
+                            await Call(form, "Arreter");
+                            Check(File.ReadAllText(Path.Combine(rom, "scripts/keep.py")).Contains("keep"), "Native backup changed user scripts");
                         }
                         finally { Environment.SetEnvironmentVariable("PATH", previousPath); }
                     });
@@ -89,6 +115,28 @@ internal static class Tests
                             Check(Field(form, "renode") == null, "Processus non dispose");
                             Check(!Process.GetProcesses().Any(p => { using(p) return p.Id == pid; }), "Processus encore vivant");
                         }
+                    });
+                    await Case("custom keyboard and zoom persist and control the calculator", async () =>
+                    {
+                        string commands = Path.Combine(root, "custom-keyboard.log");
+                        var custom = new AppSettings { Zoom = 1, CustomKeyboard = true, KeyBindings = new() { ["F2"] = "EXE" } };
+                        custom.Save(root); Check(AppSettings.Load(root).KeyBindings["F2"] == "EXE", "Keyboard settings were not persisted");
+                        typeof(MainForm).GetField("settings", Hidden).SetValue(form, custom);
+                        typeof(MainForm).GetMethod("ApplySettings", Hidden).Invoke(form, null);
+                        Check(((EcranPanel)Field(form, "ecran")).Zoom == 1, "Screen zoom was not applied");
+                        Environment.SetEnvironmentVariable("EMUWORKS_TEST_COMMANDS", commands);
+                        try
+                        {
+                            Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "normal");
+                            await Call(form, "Demarrer");
+                            Check((bool)typeof(MainForm).GetMethod("Enfoncer", Hidden).Invoke(form, new object[] { Keys.F2 }), "Custom key was ignored");
+                            Check(!(bool)typeof(MainForm).GetMethod("Enfoncer", Hidden).Invoke(form, new object[] { Keys.A }), "Removed binding remained active");
+                            typeof(MainForm).GetMethod("Relacher", Hidden).Invoke(form, new object[] { "EXE" });
+                            await Call(form, "Arreter");
+                            string sent = File.ReadAllText(commands);
+                            Check(sent.Contains("keyboard PressKey \"EXE\"") && sent.Contains("keyboard ReleaseKey \"EXE\""), "Custom key commands were not sent");
+                        }
+                        finally { Environment.SetEnvironmentVariable("EMUWORKS_TEST_COMMANDS", null); typeof(MainForm).GetField("settings", Hidden).SetValue(form, new AppSettings()); }
                     });
                     await Case("fermeture socket detectee et retour a l'arret", async () =>
                     {
@@ -192,6 +240,7 @@ internal static class Tests
     }
     static void FirmwareTests()
     {
+        NativeStorageTests();
         string fresh = Path.Combine(root, "fresh");
         CoreFirmware.PrepareLibrary(fresh);
         string freshRom = Path.Combine(fresh, "rom");

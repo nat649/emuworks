@@ -194,6 +194,16 @@ namespace Antmicro.Renode.Peripherals.Miscellaneous
         //  Le moniteur Renode ne sait pas lancer de processus : sans ca, chaque
         //  synchronisation obligerait a sortir de l'emulateur pour taper une
         //  commande, ce qui interdit un lanceur en un seul geste.
+        public void SyncScripts()
+        {
+            string executable = Environment.GetEnvironmentVariable("EMUWORKS_STORAGE_EXE");
+            if(string.IsNullOrEmpty(executable) || !File.Exists(executable))
+            {
+                throw new IOException("Native storage helper is missing. Start this script from EmuWorks.");
+            }
+            Shell(executable, "--storage sync rom/sram.bin rom");
+        }
+
         public void Shell(string program, string arguments)
         {
             try

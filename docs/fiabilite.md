@@ -1,44 +1,42 @@
-# Sauvegardes, import et fermeture
+# Backups, recovery and shutdown
 
-**EmuWorks Core 0.1** est le firmware original intégré. Son historique dure la
-session et il ne possède pas Python : les sauvegardes de scripts décrites ici
-concernent Epsilon/Omega compatibles. Passer à Core ne supprime pas les scripts.
+The 0.2.0 application stores and synchronizes scripts natively in C#. Node.js is only needed for optional developer tools and legacy command-line scripts.
 
-## Dans l'application
+## Backup history
 
-- **Importer un firmware…** : choisir l'image interne puis l'image externe du même build N0110. Les noms `epsilon.internal.bin` et `epsilon.external.bin` sont acceptés. Les fichiers DFU/ELF doivent d'abord être extraits. L'import contrôle les tailles et la table de démarrage ARM ; cela ne garantit pas la compatibilité de tous les firmwares. Aucun firmware n'est téléchargé ou distribué par l'application.
-- **Restaurer une sauvegarde…** : choisir le `manifest.json` d'une version dans `rom/sauvegardes/<date>/`. L'application vérifie les empreintes SHA-256, sauvegarde les scripts actuels puis restaure la version choisie. Redémarrer la calculatrice pour la charger.
-- **Annuler le démarrage** fonctionne pendant la connexion. Fermer la fenêtre attend l'arrêt et la sauvegarde. Une perte de connexion déclenche également l'arrêt ; le journal explique l'erreur.
+With emulation stopped, open **Scripts > Create backup** to save a dated version. **Backup history / restore** lists source-script counts and storage type (Ion or Code). Select a version to restore or import a `manifest.json` copied from another installation. SHA-256 hashes are checked before replacement, and current files are backed up first. Earlier version 1 manifests remain readable.
 
-Les versions sont conservées avant chaque démarrage, import depuis la calculatrice, restauration et ajout/suppression depuis l'application. Elles ne sont pas purgées automatiquement. Supprimer manuellement les versions devenues inutiles lorsque la calculatrice est arrêtée.
+Version 2 backups contain Python source scripts, `rom/serie.txt` when present and application preferences from `settings.json` when present. Code scripts are independent of Ion scripts. Restoration does not install firmware or restore the complete running calculator, graph functions, Python console variables or Core session history. Preferences absent from an older backup retain their current value. New settings are applied after restoration.
 
-## Ce qui est sauvegardé
+Automatic backups are created before external firmware startup, synchronization from the calculator, script edits and restoration. Versions under `rom/sauvegardes/` are not automatically purged; old versions may be removed while emulation is stopped.
 
-L'historique contient les **scripts Python**, pas une image complète de la calculatrice : l'application redémarre le firmware à froid. Les réglages, fonctions et autres données ne font pas partie de cet historique. Les records non Python présents dans l'image de référence sont préservés lors de l'injection.
+## Safe synchronization
 
-Chaque session possède un vidage indépendant dans `rom/.sessions/`. Un ancien `rom/sram.bin` ne peut donc pas remplacer les scripts après un démarrage raté. À l'arrêt normal, la machine est mise en pause avant le dernier vidage. Si Renode doit être terminé de force, la dernière sauvegarde périodique peut avoir quelques secondes de retard. Les vidages sont conservés pour diagnostic/récupération et ne sont pas purgés automatiquement.
+Native storage supports Epsilon/Omega's 32,768-byte layout and Upsilon's 64,000-byte layout. It validates headers, footers, record boundaries and names, preserves non-Python records and the delegate, and clears the cache at its layout-specific position. Invalid or unexpectedly empty storage does not overwrite existing source scripts.
 
-Les écritures de fichiers passent par un temporaire puis un remplacement. Le remplacement du dossier de scripts conserve aussi un dossier de secours pour reprendre après une interruption. Un vidage invalide ou un stockage Python vide inattendu est refusé : consulter le journal. Pour exporter volontairement un stockage vide, utiliser `node renode/tools/rom.js pull <vidage> rom --force` après avoir arrêté l'application.
+Each session has an independent SRAM dump under `rom/.sessions/`. A failed startup never imports an older dump. Normal shutdown pauses the CPU before the final dump. Forced termination may recover an earlier periodic save. Dumps are retained for diagnosis.
 
-Un verrou empêche deux instances de l'application de modifier la même ROM. Les outils en ligne de commande et les éditeurs externes ne prennent pas ce verrou : les utiliser lorsque la calculatrice est arrêtée.
+Files are written through temporary files and replacement; script directories keep a rollback copy. A lock prevents application instances from modifying the same ROM. External editors and command-line tools should be used while emulation is stopped. Firmware installation journals both images and recovers an interrupted installation at the next launch.
 
-L'installation d'une paire de firmware conserve un journal de reprise : une installation interrompue est annulée au prochain lancement. L'application ne prétend pas détecter deux images individuellement valides provenant de builds différents ; sélectionner les deux fichiers du même artefact.
+## Developer checks
 
-## Vérifications locales
-
-Depuis la racine du dépôt, avec Node.js et le SDK .NET 8 ou ultérieur :
+Run native storage and application lifecycle checks with the .NET SDK:
 
 ```powershell
-node --test tests/storage.test.cjs
 dotnet run --project tests/EmuWorks.Tests.csproj -- .
 ```
 
-Les tests Windows utilisent un faux Renode, des données temporaires et le port local 3555 : fermer les émulateurs avant de les lancer. Ils vérifient l'import, la reprise après interruption, l'annulation, les redémarrages, la déconnexion et l'arrêt forcé. Aucun firmware n'est nécessaire.
-
-Test facultatif avec Renode installé et une paire de firmware fournie séparément :
+Tests use isolated temporary data and a separate screen port. No user firmware is required. The optional JavaScript storage tests remain available for legacy tools:
 
 ```powershell
-node tests/renode.integration.cjs 'C:\Program Files\Renode\bin\Renode.exe' 'C:\chemin\firmware'
+node --test tests/storage.test.cjs
 ```
 
-Ce test copie les données dans un dossier temporaire sans espace, vérifie le démarrage, une trame complète et un aller-retour de script. Le dossier et son journal sont conservés pour inspection.
+For a real ARM firmware integration check, build the app and supply matching images separately:
+
+```powershell
+dotnet build app/EmuWorks.csproj -c Release
+node tests/renode.integration.cjs 'C:\Program Files\Renode\bin\Renode.exe' 'C:\Firmware' 'app\bin\Release\net8.0-windows\EmuWorks.exe'
+```
+
+The integration test picks an isolated port, removes Node.js from the Renode/helper PATH, and checks boot, framebuffer delivery, native script injection and backup round trips. Node.js runs the developer test harness only. Logs and temporary test data are retained for inspection.
