@@ -28,7 +28,7 @@ public partial class MainForm
             .Replace("@../rom/", "@" + rom + "/")
             .Replace("lcd Serve 3555", "lcd Serve " + PortEcran);
         // Apply the selected battery level before the firmware starts reading ADC1.
-        text = text.Replace("cpu VectorTableOffset 0x08000000", "cpu VectorTableOffset 0x08000000\nadc SetMillivolts " + settings.BatteryMillivolts);
+        text = text.Replace("cpu VectorTableOffset 0x08000000", "cpu VectorTableOffset 0x08000000\ngpioe OnGPIO 3 true\nadc SetMillivolts " + settings.BatteryMillivolts);
         string directory = Path.Combine(RomDir, ".sessions"); Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, template);
         File.WriteAllText(path, text);
@@ -75,7 +75,7 @@ public partial class MainForm
         var hint = new Label { Text = "Code uses navigation and text-compatible keys. Shift and Alpha toggle until pressed again.", Dock = DockStyle.Fill, AutoEllipsis = true, Font = new("Segoe UI", 8) };
         keys.Controls.Add(hint, 0, 9); keys.SetColumnSpan(hint, 6); keyboard.Controls.Add(keys);
         var hardware = new TabPage("Battery") { BackColor = Color.White, Padding = new(14) };
-        var controls = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        var controls = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
         controls.Controls.Add(new Label { Text = "Simulated battery voltage (mV)", AutoSize = true });
         batteryVoltage = new() { Minimum = 3000, Maximum = 4300, Increment = 25, Value = 4050, Width = 120 };
         batteryVoltage.ValueChanged += (_, _) => SetBattery((int)batteryVoltage.Value);
@@ -146,7 +146,13 @@ public partial class MainForm
         int millivolts = settings.BatteryMillivolts;
         batteryState.Text = $"{millivolts / 1000.0:F2} V · " + (millivolts < 3600 ? "Empty" : millivolts < 3700 ? "Low" : millivolts < 3800 ? "Medium" : "Full");
     }
-    private void ApplyBattery() { if (enMarche) Commande("adc SetMillivolts " + settings.BatteryMillivolts); }
+    private void ApplyBattery()
+    {
+        if (!enMarche) return;
+        // N0110 PE3 is active-low charging status. Keep it high for battery operation.
+        Commande("gpioe OnGPIO 3 true");
+        Commande("adc SetMillivolts " + settings.BatteryMillivolts);
+    }
 
     private void OpenDeveloper()
     {
@@ -156,7 +162,8 @@ public partial class MainForm
         UpdateVirtualModifiers();
         if (developerWindow == null || developerWindow.IsDisposed)
             developerWindow = new DeveloperDialog(this);
-        developerWindow.Show(this); developerWindow.BringToFront();
+        if (!developerWindow.Visible) developerWindow.Show(this);
+        developerWindow.BringToFront();
     }
     internal bool SendDeveloperCommand(string command)
     {

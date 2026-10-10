@@ -920,7 +920,17 @@ namespace EmuWorks
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            if (editingSettings || batteryVoltage.ContainsFocus) return base.ProcessCmdKey(ref msg, keyData);
+            if (editingSettings) return base.ProcessCmdKey(ref msg, keyData);
+            if (batteryVoltage.ContainsFocus)
+            {
+                if ((keyData & Keys.KeyCode) == Keys.Enter)
+                {
+                    SetBattery((int)batteryVoltage.Value);
+                    ecran.Focus();
+                    return true;
+                }
+                return base.ProcessCmdKey(ref msg, keyData);
+            }
             if (enMarche && codeSession) {
                 Keys key = keyData & Keys.KeyCode;
                 if (key == Keys.Left || key == Keys.Right) return true;
@@ -934,6 +944,14 @@ namespace EmuWorks
             if (enMarche)
             {
                 Keys nue = keyData & Keys.KeyCode;
+                // WinForms treats Enter as a focused-button click before OnKeyDown.
+                // Consume it here so it reaches EXE without reopening app tools.
+                if (nue == Keys.Enter)
+                {
+                    if (msg.Msg == 0x0100 || msg.Msg == 0x0104)
+                        if (TryBinding(nue, out var key)) Commande("keyboard TapKey \"" + key + "\"");
+                    return true;
+                }
                 if (nue == Keys.Left || nue == Keys.Up || nue == Keys.Down
                     || nue == Keys.Right || nue == Keys.Tab)
                 {

@@ -27,13 +27,20 @@ internal static partial class Tests
                 epsilon.SendDeveloperCommand("sysbus ReadDoubleWord 0x20000000");
                 epsilon.SendDeveloperCommand("lcd Stats");
                 string dump = Path.Combine(directory, "memory.bin");
+                epsilon.SendDeveloperCommand("pause");
+                await Task.Delay(500);
+                epsilon.SendDeveloperCommand("sysbus ReadDoubleWord 0x40021010");
                 epsilon.SendDeveloperCommand("mem Save \"" + dump.Replace('\\', '/') + "\" 0x20000000 256");
                 foreach (string key in new[] { "SEVEN", "PLUS", "TWO", "EXE" }) { core.VirtualKey(key); await Task.Delay(200); }
                 await Task.Delay(1200);
                 string journal = ((TextBox)Field(epsilon, "logBox")).Text;
                 Check(File.Exists(dump) && new FileInfo(dump).Length == 256, "Real memory dump failed: " + journal);
+                var charging = System.Text.RegularExpressions.Regex.Match(journal, @"sysbus ReadDoubleWord 0x40021010\s+0x([0-9A-Fa-f]+)");
+                Check(charging.Success && (Convert.ToUInt32(charging.Groups[1].Value, 16) & 8) != 0, "PE3 charging input was not pulled high: " + journal);
+                epsilon.SendDeveloperCommand("start");
                 Check(journal.Contains("0x00000E42") && journal.Contains("PC / R15") && journal.Contains("SP / R13") && journal.Contains("RAMWR=") && !journal.Contains("There was an error executing command") && !journal.Contains("Could not find"), "Developer command failed: " + journal);
                 Console.WriteLine("PASS real ADC battery commands, register inspection, memory dump and virtual key dispatch");
+                Console.WriteLine("PASS real N0110 battery charging input is inactive");
                 string raw = Path.Combine(directory, "core-screen.raw");
                 core.SendDeveloperCommand("lcd Dump \"" + raw.Replace('\\', '/') + "\"");
                 var deadline = DateTime.UtcNow.AddSeconds(10);

@@ -12,7 +12,7 @@ Core and external GPIO firmwares accept the calculator keys they implement. Code
 
 In **Battery**, choose Full (4050 mV), Medium (3750 mV), Low (3650 mV), Empty (3500 mV), or enter 3000–4300 mV. The app writes the value to the emulated ADC and stores it in `settings.json`. It applies the value before boot and after changes during a session.
 
-The firmware determines the actual icon, thresholds and polling delay. This is a voltage simulation, not a charge percentage, automatic drain or USB charging model. A firmware that does not display battery status will not gain an icon.
+The N0110 active-low charging input (PE3) is held high to represent battery operation rather than charging. The firmware determines the actual icon, thresholds and polling delay. This is a voltage simulation, not a charge percentage, automatic drain or USB charging model. A firmware that does not display battery status, including the current Core and Code builds, will not gain an icon. An empty battery can trigger the firmware's normal low-battery shutdown.
 
 ## Developer tools
 

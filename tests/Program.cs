@@ -191,6 +191,14 @@ internal static partial class Tests
                         {
                             await Call(form, "Demarrer");
                             form.VirtualKey("SEVEN"); form.VirtualKey("SHIFT"); form.VirtualKey("SHIFT");
+                            typeof(MainForm).GetMethod("OpenDeveloper", Hidden).Invoke(form, null);
+                            var developer = (DeveloperDialog)Field(form, "developerWindow");
+                            typeof(MainForm).GetMethod("OpenDeveloper", Hidden).Invoke(form, null);
+                            Check(developer.Visible && ReferenceEquals(developer, Field(form, "developerWindow")), "Repeated developer opening did not reuse the visible window");
+                            developer.Close();
+                            var focusedAction = (Button)Field(form, "settingsButton"); focusedAction.Focus();
+                            object[] enterArgs = { Message.Create(form.Handle, 0x0100, (IntPtr)Keys.Enter, IntPtr.Zero), Keys.Enter };
+                            Check((bool)typeof(MainForm).GetMethod("ProcessCmdKey", Hidden).Invoke(form, enterArgs), "Enter was not consumed before focused-button activation");
                             var voltage = (NumericUpDown)Field(form, "batteryVoltage"); voltage.Value = 3650;
                             Check(AppSettings.Load(root).BatteryMillivolts == 3650, "Battery voltage not persisted");
                             Check(form.SendDeveloperCommand("cpu GetRegisters"), "Developer command rejected");
@@ -199,6 +207,7 @@ internal static partial class Tests
                             string sent = File.ReadAllText(commands);
                             Check(sent.Contains("keyboard TapKey \"SEVEN\"") && sent.Contains("keyboard PressKey \"SHIFT\"") && sent.Contains("keyboard ReleaseKey \"SHIFT\""), "Virtual keys missing");
                             Check(sent.Contains("adc SetMillivolts 3650") && sent.Contains("cpu GetRegisters"), "Developer or ADC command missing");
+                            Check(sent.Contains("keyboard TapKey \"EXE\"") && sent.Contains("gpioe OnGPIO 3 true"), "Enter or non-charging status command missing");
                             string boot = File.ReadAllText(Path.Combine(rom, ".sessions", "numworks-native.resc"));
                             Check(!boot.Contains("@../rom/") && boot.Contains("lcd Serve " + testPort), "Startup paths or screen port not isolated");
                         }
