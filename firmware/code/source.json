@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/nat649/emuworks-code",
+  "revision": "a2a43069428dcaa3752fb66b5b8508fc61828347",
+  "license": "MIT (original code); see THIRD_PARTY_NOTICES.md",
+  "sha256": {
+    "internal.bin": "6bc843556218599fc077b44de13e258436ffd49a3e33780b357a1fb98c643771",
+    "external.bin": "fc9c9b852c438576fd8165daf22af3865a417696f774c30a712f4256759e7bee"
+  }
+}

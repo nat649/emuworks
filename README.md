@@ -12,6 +12,14 @@ Choose **emuworks-core-0.1 → Installer → Demarrer**. Core is installed autom
 
 **Third-party firmware is not bundled.** To use Epsilon or Omega, supply your own matching internal/external images. The workflow `renode/build-firmware-n0110.yml` can compile Epsilon from its sources. Third-party firmware retains its own license; the project's MIT license does not relicense it.
 
+## Python-only firmware: EmuWorks Code
+
+**EmuWorks Code 0.1** is a separate firmware with only **Python** and **About** on its home screen. It runs MicroPython 1.26.1 on the emulated Cortex-M7 and provides an interactive console, script execution, `math`, imports between scripts, and Ctrl+C interruption.
+
+Select **emuworks-code-0.1**, install it, and start the emulator. Core remains available separately. Code scripts live in `rom/code-scripts/`, independently of Epsilon/Omega scripts. Add or edit files while stopped, then restart Code to reload them. The app embeds both original firmwares; no runtime download is needed.
+
+Sources and build instructions: [emuworks-code](https://github.com/nat649/emuworks-code). Code is based on MicroPython; its dependency notices are included in [firmware/code](firmware/code/THIRD_PARTY_NOTICES.md) and extracted alongside the firmware in the local library. Console variables are session-only; scripts are read-only inside the firmware. See the firmware README for supported features and limits.
+
 ## Updating the bundled Core firmware
 
 Core remains embedded in `EmuWorks.exe`: users do not need to download or clone the firmware repository. Building the Windows app also works without an ARM compiler or a Git submodule.

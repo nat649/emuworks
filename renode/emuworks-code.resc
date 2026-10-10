@@ -1,0 +1,16 @@
+: EmuWorks Code: MicroPython with an independent read-only script pack.
+i @NumWorksDisplay.cs
+i @NumWorksKeyboard.cs
+i @NumWorksCrc.cs
+i @NumWorksAdc.cs
+i @MemFile.cs
+mach add "code"
+mach set "code"
+machine LoadPlatformDescription @numworks_n0110.repl
+sysbus LoadBinary @../rom/internal.bin 0x08000000
+sysbus LoadBinary @../rom/external.bin 0x90000000
+sysbus LoadBinary @../rom/code-scripts.bin 0x90700000
+cpu VectorTableOffset 0x08000000
+emulation RunFor "0.1"
+lcd Serve 3555
+start

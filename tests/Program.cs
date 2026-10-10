@@ -22,6 +22,7 @@ internal static class Tests
         try
         {
             FirmwareTests();
+            if (args.Contains("--firmware-only")) return;
             string rom = Path.Combine(root, "rom"), tools = Path.Combine(root, "renode", "tools");
             Directory.CreateDirectory(Path.Combine(rom, "scripts")); Directory.CreateDirectory(tools);
             File.WriteAllText(Path.Combine(rom, "scripts", "keep.py"), "print('keep')\n");
@@ -101,6 +102,34 @@ internal static class Tests
                         }
                         finally { Environment.SetEnvironmentVariable("PATH", oldPath); MakeFirmware(rom, 0x08000009); }
                     });
+                    await Case("Code starts without Node, routes text and preserves independent scripts", async () =>
+                    {
+                        string library = Path.Combine(root, "firmwares", CodeFirmware.LibraryName);
+                        FirmwareStore.Install(Path.Combine(library, "internal.bin"), Path.Combine(library, "external.bin"), rom);
+                        string codePath = Path.Combine(rom, "code-scripts", "hello.py");
+                        string original = File.ReadAllText(codePath);
+                        string commandLog = Path.Combine(root, "code-commands.txt");
+                        string oldPath = Environment.GetEnvironmentVariable("PATH");
+                        try
+                        {
+                            Environment.SetEnvironmentVariable("PATH", "");
+                            Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "normal");
+                            Environment.SetEnvironmentVariable("EMUWORKS_TEST_COMMANDS", commandLog);
+                            await Call(form, "Demarrer").WaitAsync(TimeSpan.FromSeconds(15));
+                            Check((bool)Field(form, "enMarche") && (bool)Field(form, "codeSession"), "Code was not recognized");
+                            Check(((Process)Field(form, "renode")).StartInfo.Arguments.Contains("emuworks-code.resc"), "Wrong startup script");
+                            typeof(MainForm).GetMethod("OnKeyPress", Hidden).Invoke(form, new object[] { new KeyPressEventArgs('p') });
+                            object[] args = { new Message(), Keys.Control | Keys.C };
+                            Check((bool)typeof(MainForm).GetMethod("ProcessCmdKey", Hidden).Invoke(form, args), "Ctrl+C was not handled");
+                            await Call(form, "Arreter");
+                            string log = File.ReadAllText(commandLog);
+                            Check(log.Contains("keyboard TypeHex \"70\"") && log.Contains("keyboard TypeHex \"03\""), "Text or interrupt packet missing");
+                            Check(!log.Contains("SaveSram"), "Code used Ion storage synchronization");
+                            Check(File.ReadAllText(codePath) == original && File.ReadAllText(Path.Combine(rom, "scripts/keep.py")).Contains("keep"), "Scripts were changed");
+                            Check(File.Exists(Path.Combine(library, "licenses", "MicroPython.txt")), "Embedded dependency notices missing");
+                        }
+                        finally { Environment.SetEnvironmentVariable("PATH", oldPath); Environment.SetEnvironmentVariable("EMUWORKS_TEST_COMMANDS", null); MakeFirmware(rom, 0x08000009); }
+                    });
                     await Case("fermeture de fenetre pendant connexion", async () =>
                     {
                         Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "silent");
@@ -152,6 +181,30 @@ internal static class Tests
         CoreFirmware.PrepareLibrary(fresh);
         Check(!CoreFirmware.IsCore(Path.Combine(freshRom, "internal.bin")), "Firmware utilisateur remplace par Core");
         Console.WriteLine("PASS installation Core neuve et preservation firmware existant");
+        CodeFirmware.PrepareLibrary(fresh);
+        string codeLibrary = Path.Combine(fresh, "firmwares", CodeFirmware.LibraryName);
+        Check(CodeFirmware.IsCode(Path.Combine(codeLibrary, "internal.bin")), "Code identity missing");
+        Check(!CodeFirmware.IsCode(Path.Combine(freshRom, "internal.bin")), "Code replaced active firmware");
+        FirmwareStore.Validate(Path.Combine(codeLibrary, "internal.bin"), Path.Combine(codeLibrary, "external.bin"));
+        string codeScripts = Path.Combine(freshRom, "code-scripts");
+        File.WriteAllText(Path.Combine(codeScripts, "hello.py"), "print('preserve me')\n");
+        CodeFirmware.PrepareLibrary(fresh);
+        Check(File.ReadAllText(Path.Combine(codeScripts, "hello.py")).Contains("preserve me"), "User script overwritten");
+        CodeFirmware.PackScripts(freshRom);
+        byte[] pack = File.ReadAllBytes(Path.Combine(freshRom, "code-scripts.bin"));
+        Check(BitConverter.ToUInt32(pack, 0) == 0x45574353 && BitConverter.ToInt32(pack, 4) == 1, "Invalid script pack header");
+        int sourceOffset = (int)BitConverter.ToUInt32(pack, 40);
+        int sourceLength = BitConverter.ToInt32(pack, 44);
+        Check(System.Text.Encoding.UTF8.GetString(pack, sourceOffset, sourceLength) == "print('preserve me')\n", "Script pack payload changed");
+        File.WriteAllText(Path.Combine(codeScripts, "bad-name.py"), "pass");
+        try { CodeFirmware.PackScripts(freshRom); throw new Exception("Invalid module name accepted"); }
+        catch (IOException) { }
+        Check(pack.SequenceEqual(File.ReadAllBytes(Path.Combine(freshRom, "code-scripts.bin"))), "Rejected pack replaced the valid one");
+        File.Delete(Path.Combine(codeScripts, "bad-name.py"));
+        File.WriteAllText(Path.Combine(codeScripts, "large.py"), new string('x', 16385));
+        try { CodeFirmware.PackScripts(freshRom); throw new Exception("Oversized script accepted"); }
+        catch (IOException) { }
+        Console.WriteLine("PASS Code installation, firmware preservation, script packing and validation");
         string a = Path.Combine(root, "a"), b = Path.Combine(root, "b");
         MakeFirmware(a, 0x08000009); MakeFirmware(b, 0x00200009);
         FirmwareStore.Install(Path.Combine(a, "internal.bin"), Path.Combine(a, "external.bin"), b);
@@ -179,7 +232,11 @@ internal static class Tests
         Task input = Task.Run(async () =>
         {
             while (await Console.In.ReadLineAsync() is string line)
+            {
+                string commandLog = Environment.GetEnvironmentVariable("EMUWORKS_TEST_COMMANDS");
+                if (commandLog != null) File.AppendAllText(commandLog, line + "\n");
                 if (line == "quit" && mode != "ignore-quit") { cancel.Cancel(); return; }
+            }
         });
         if (mode == "silent") { await input; return; }
         var listener = new TcpListener(IPAddress.Loopback, 3555);

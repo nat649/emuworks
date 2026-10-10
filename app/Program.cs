@@ -285,7 +285,9 @@ namespace EmuWorks
 
         private readonly string baseDir;
         private string RomDir => Path.Combine(baseDir, "rom");
-        private string ScriptsDir => Path.Combine(RomDir, "scripts");
+        private bool CodeInstalled => CodeFirmware.IsCode(Path.Combine(RomDir, "internal.bin"));
+        private bool codeSession;
+        private string ScriptsDir => Path.Combine(RomDir, CodeInstalled ? "code-scripts" : "scripts");
         private string FirmwaresDir => Path.Combine(baseDir, "firmwares");
         private string RenodeDir => Path.Combine(baseDir, "renode");
         private string RomTool => Path.Combine(RenodeDir, "tools", "rom.js");
@@ -327,6 +329,7 @@ namespace EmuWorks
                 using var lease = AcquireLease();
                 FirmwareStore.Recover(RomDir);
                 CoreFirmware.PrepareLibrary(baseDir);
+                CodeFirmware.PrepareLibrary(baseDir);
             }
             catch (Exception ex) { Log("Preparation du firmware : " + ex.Message); }
             RefreshFirmwares();
@@ -570,6 +573,7 @@ namespace EmuWorks
                 Log("Firmware installe. Les tailles et la table de demarrage ont ete verifiees.");
                 RefreshFirmwares();
                 SetControlsEnabled(true);
+                RefreshScripts();
                 if (CoreFirmware.IsCore(Path.Combine(RomDir, "internal.bin")))
                     Log("EmuWorks Core : calculatrice de base, sans Python. Historique conserve pendant la session.");
                 startButton.Enabled = true;
@@ -679,7 +683,7 @@ namespace EmuWorks
             try
             {
                 using var lease = AcquireLease();
-                if (await RunTool("backup", RomDir)) edit();
+                if (CodeInstalled || await RunTool("backup", RomDir)) edit();
             }
             catch (Exception ex) { Log("Modification refusee : " + ex.Message); }
             finally
@@ -692,7 +696,11 @@ namespace EmuWorks
         private void OnOpenScript(object sender, EventArgs e)
         {
             if (scriptList.SelectedItem == null) return;
-            OpenInShell(Path.Combine(ScriptsDir, scriptList.SelectedItem.ToString()));
+            string script = Path.Combine(ScriptsDir, scriptList.SelectedItem.ToString());
+            if (CodeInstalled) {
+                var editor = new ProcessStartInfo("notepad.exe") { UseShellExecute = false };
+                editor.ArgumentList.Add(script); Process.Start(editor)?.Dispose();
+            } else OpenInShell(script);
         }
 
         private static void OpenInShell(string path)
@@ -722,13 +730,15 @@ namespace EmuWorks
                 FirmwareStore.Recover(RomDir);
                 FirmwareStore.Validate(Path.Combine(RomDir, "internal.bin"), Path.Combine(RomDir, "external.bin"));
                 coreSession = CoreFirmware.IsCore(Path.Combine(RomDir, "internal.bin"));
+                codeSession = CodeInstalled;
+                if (codeSession) CodeFirmware.PackScripts(RomDir);
                 if (IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(p => p.Port == PortEcran))
                     throw new IOException("Le port " + PortEcran + " est deja utilise. Ferme l'autre emulateur.");
 
                 var token = session.Token;
                 SetControlsEnabled(false);
                 startButton.Text = "Annuler le demarrage";
-                if (!coreSession && !await RunTool("backup", RomDir)) throw new IOException("La sauvegarde des scripts a echoue. Demarrage annule.");
+                if (!coreSession && !codeSession && !await RunTool("backup", RomDir)) throw new IOException("La sauvegarde des scripts a echoue. Demarrage annule.");
                 token.ThrowIfCancellationRequested();
                 EnregistrerSerie();
                 string sessions = Path.Combine(RomDir, ".sessions");
@@ -736,7 +746,7 @@ namespace EmuWorks
                 sessionDump = Path.Combine(sessions, Guid.NewGuid().ToString("N") + ".bin");
                 sessionReady = false;
 
-                string bootScript = coreSession ? "emuworks-core.resc" : "numworks-embarque.resc";
+                string bootScript = codeSession ? "emuworks-code.resc" : coreSession ? "emuworks-core.resc" : "numworks-embarque.resc";
                 var info = new ProcessStartInfo(RenodeExe,
                     "--console --disable-xwt --hide-log -e \"i @" + bootScript + "\"")
                 {
@@ -867,7 +877,7 @@ namespace EmuWorks
                     if (!renode.HasExited)
                     {
                         // Pause avant le dernier vidage : le firmware ne modifie plus les records.
-                        if (sessionReady && !coreSession)
+                        if (sessionReady && !coreSession && !codeSession)
                         {
                             Commande("pause");
                             Commande("mem SaveSram \"" + sessionDump.Replace('\\', '/') + "\"");
@@ -885,7 +895,8 @@ namespace EmuWorks
                     }
                     renode.Dispose(); renode = null;
                 }
-                if (coreSession) Log("EmuWorks Core arrete. Son historique sera remis a zero au prochain demarrage.");
+                if (codeSession) Log("EmuWorks Code stopped. Source scripts are preserved; console state is session-only.");
+                else if (coreSession) Log("EmuWorks Core arrete. Son historique sera remis a zero au prochain demarrage.");
                 else if (sessionReady && File.Exists(sessionDump))
                 {
                     if (!await RunTool("pull", sessionDump, RomDir))
@@ -983,6 +994,14 @@ namespace EmuWorks
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (enMarche && codeSession) {
+                Keys key = keyData & Keys.KeyCode;
+                if (key == Keys.Left || key == Keys.Right) return true;
+                if (keyData == (Keys.Control | Keys.C)) { SendCodeChar(3); return true; }
+                int c = key == Keys.Enter ? 13 : key == Keys.Escape || key == Keys.Home ? 27 : key == Keys.Back ? 8 : key == Keys.Tab ? 9 : key == Keys.Up ? 17 : key == Keys.Down ? 18 : 0;
+                if (c != 0) { SendCodeChar(c); return true; }
+                return base.ProcessCmdKey(ref msg, keyData);
+            }
             //  Sans ca, les fleches et Tab deplacent le focus entre les boutons
             //  au lieu d'atteindre la calculatrice.
             if (enMarche)
@@ -1002,6 +1021,7 @@ namespace EmuWorks
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
+            if (enMarche && codeSession) { base.OnKeyDown(e); return; }
             if (enMarche && Enfoncer(e.KeyCode))
             {
                 e.Handled = true;
@@ -1024,6 +1044,10 @@ namespace EmuWorks
 
         protected override void OnKeyPress(KeyPressEventArgs e)
         {
+            if (enMarche && codeSession) {
+                if (e.KeyChar <= 127) SendCodeChar(e.KeyChar);
+                e.Handled = true; return;
+            }
             if (enMarche)
             {
                 string nom;
@@ -1037,6 +1061,8 @@ namespace EmuWorks
             }
             base.OnKeyPress(e);
         }
+
+        private void SendCodeChar(int value) { Commande("keyboard TypeHex " + (char)34 + value.ToString("X2") + (char)34); }
 
         private bool Enfoncer(Keys code)
         {
@@ -1097,11 +1123,11 @@ namespace EmuWorks
             scriptsGroup.Text = python ? "Scripts Python" : "Python indisponible dans Core 0.1";
             installButton.Enabled = valeur;
             importButton.Enabled = valeur;
-            restoreButton.Enabled = valeur && python;
+            restoreButton.Enabled = valeur && python && !CodeInstalled;
             scriptList.Enabled = valeur && python;
             folderButton.Enabled = valeur && python;
             firmwareBox.Enabled = valeur;
-            serieBox.Enabled = valeur && python;
+            serieBox.Enabled = valeur && python && !CodeInstalled;
             addButton.Enabled = valeur && python;
             removeButton.Enabled = valeur && python;
         }

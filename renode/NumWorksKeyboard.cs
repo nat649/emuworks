@@ -33,8 +33,28 @@ namespace Antmicro.Renode.Peripherals.Input
 
         public uint ReadDoubleWord(long offset)
         {
+            if(offset == 4)
+            {
+                lock(textLock) { return textInput.Count == 0 ? 0u : textInput.Dequeue(); }
+            }
             return 0;
         }
+
+        // ASCII input channel for the original EmuWorks Code firmware.
+        // Hex avoids interpreting user text as Renode monitor commands.
+        public void TypeHex(string hex)
+        {
+            if(hex.Length % 2 != 0 || hex.Length > 8192) throw new ArgumentException("Invalid text packet");
+            byte[] bytes = new byte[hex.Length / 2];
+            for(int i = 0; i < bytes.Length; i++) bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
+            lock(textLock)
+            {
+                if(textInput.Count + bytes.Length > 4096) throw new InvalidOperationException("Input queue full");
+                foreach(byte value in bytes) textInput.Enqueue(value);
+            }
+        }
+        private readonly object textLock = new object();
+        private readonly System.Collections.Generic.Queue<byte> textInput = new System.Collections.Generic.Queue<byte>();
 
         public void WriteDoubleWord(long offset, uint value)
         {
@@ -63,6 +83,7 @@ namespace Antmicro.Renode.Peripherals.Input
 
         public void Reset()
         {
+            lock(textLock) { textInput.Clear(); }
             for(int i = 0; i < rowHigh.Length; i = i + 1)
             {
                 rowHigh[i] = true;

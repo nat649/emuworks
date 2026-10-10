@@ -19,3 +19,6 @@
 *.dfu binary
 *.elf binary
 *.raw binary
+
+# Preserve upstream dependency notices verbatim.
+firmware/code/licenses/* -text -whitespace

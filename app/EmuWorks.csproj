@@ -15,6 +15,11 @@
   <ItemGroup>
     <EmbeddedResource Include="../firmware/core/bundled/internal.bin" LogicalName="Core.internal.bin" />
     <EmbeddedResource Include="../firmware/core/bundled/external.bin" LogicalName="Core.external.bin" />
+    <EmbeddedResource Include="../firmware/code/bundled/internal.bin" LogicalName="Code.internal.bin" />
+    <EmbeddedResource Include="../firmware/code/bundled/external.bin" LogicalName="Code.external.bin" />
+    <EmbeddedResource Include="../firmware/code/licenses/*.txt" LogicalName="Code.License.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../firmware/code/LICENSE" LogicalName="Code.License.LICENSE" />
+    <EmbeddedResource Include="../firmware/code/THIRD_PARTY_NOTICES.md" LogicalName="Code.License.THIRD_PARTY_NOTICES.md" />
   </ItemGroup>
 
 </Project>

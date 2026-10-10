@@ -55,3 +55,8 @@ lancement.txt
 emb*.txt
 *.log
 *.erreur.txt
+
+# Original EmuWorks Code images and independent user scripts
+!firmware/code/bundled/internal.bin
+!firmware/code/bundled/external.bin
+rom/code-scripts/
