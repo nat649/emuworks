@@ -113,13 +113,29 @@ public partial class MainForm
         catch (Exception ex) { Log("Firmware information: " + ex.Message); }
     }
     private void ApplySettings() { ecran.Zoom = settings.Zoom; ecran.Invalidate(); }
+    private bool editingSettings;
     private void EditSettings()
     {
-        if (session != null) return;
-        using var dialog = new SettingsDialog(settings, Touches);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        try { using var lease = AcquireLease(); dialog.Value.Save(baseDir); settings = dialog.Value; ApplySettings(); }
-        catch (Exception ex) { Log("Settings: " + ex.Message); }
+        if (closing || editingSettings) return;
+        editingSettings = true;
+        try
+        {
+            // Release all held keys before giving the dialog keyboard focus.
+            foreach (var key in touchesEnfoncees.ToList()) Relacher(key);
+            using var dialog = new SettingsDialog(settings, Touches);
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            // A running session already owns the exclusive ROM lease.
+            using var lease = sessionLease == null ? AcquireLease() : null;
+            dialog.Value.Save(baseDir);
+            settings = dialog.Value;
+            ApplySettings();
+        }
+        catch (Exception ex)
+        {
+            Log("Settings: " + ex.Message);
+            if (!IsDisposed && !Disposing) MessageBox.Show(this, ex.Message, "Settings", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally { editingSettings = false; }
     }
     private async Task CreateBackup()
     {

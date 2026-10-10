@@ -116,6 +116,34 @@ internal static partial class Tests
                             Check(!Process.GetProcesses().Any(p => { using(p) return p.Id == pid; }), "Processus encore vivant");
                         }
                     });
+                    await Case("settings open and save while the calculator is running", async () =>
+                    {
+                        Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "normal");
+                        await Call(form, "Demarrer");
+                        try
+                        {
+                            Check(((Button)Field(form, "settingsButton")).Enabled, "Settings button disabled during emulation");
+                            bool opened = false;
+                            using var timer = new System.Windows.Forms.Timer { Interval = 100 };
+                            timer.Tick += (_, _) =>
+                            {
+                                var dialog = Application.OpenForms.OfType<SettingsDialog>().FirstOrDefault();
+                                if (dialog == null) return;
+                                timer.Stop(); opened = true;
+                                Check((bool)Field(form, "editingSettings"), "Calculator input was not suspended");
+                                var zoom = (ComboBox)typeof(SettingsDialog).GetField("zoom", Hidden).GetValue(dialog);
+                                zoom.SelectedIndex = 2;
+                                typeof(SettingsDialog).GetMethod("Save", Hidden).Invoke(dialog, null);
+                            };
+                            timer.Start();
+                            ((Button)Field(form, "settingsButton")).PerformClick();
+                            Check(opened, "Settings dialog did not open");
+                            Check(AppSettings.Load(root).Zoom == 2, "Live settings were not saved");
+                            Check(((EcranPanel)Field(form, "ecran")).Zoom == 2, "Live zoom was not applied");
+                            Check((bool)Field(form, "enMarche") && !(bool)Field(form, "editingSettings"), "Settings interrupted the session or retained input focus");
+                        }
+                        finally { await Call(form, "Arreter"); }
+                    });
                     await Case("custom keyboard and zoom persist and control the calculator", async () =>
                     {
                         string commands = Path.Combine(root, "custom-keyboard.log");

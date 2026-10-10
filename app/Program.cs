@@ -912,6 +912,7 @@ namespace EmuWorks
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (editingSettings) return base.ProcessCmdKey(ref msg, keyData);
             if (enMarche && codeSession) {
                 Keys key = keyData & Keys.KeyCode;
                 if (key == Keys.Left || key == Keys.Right) return true;
@@ -939,6 +940,7 @@ namespace EmuWorks
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
+            if (editingSettings) { base.OnKeyDown(e); return; }
             if (enMarche && codeSession) { base.OnKeyDown(e); return; }
             if (enMarche && Enfoncer(e.KeyCode))
             {
@@ -950,6 +952,7 @@ namespace EmuWorks
 
         protected override void OnKeyUp(KeyEventArgs e)
         {
+            if (editingSettings) { base.OnKeyUp(e); return; }
             if (enMarche)
             {
                 string nom;
@@ -962,6 +965,7 @@ namespace EmuWorks
 
         protected override void OnKeyPress(KeyPressEventArgs e)
         {
+            if (editingSettings) { base.OnKeyPress(e); return; }
             if (enMarche && codeSession) {
                 if (e.KeyChar <= 127) SendCodeChar(e.KeyChar);
                 e.Handled = true; return;
@@ -1043,7 +1047,7 @@ namespace EmuWorks
             importButton.Enabled = valeur;
             restoreButton.Enabled = valeur;
             backupsButton.Enabled = valeur;
-            settingsButton.Enabled = valeur;
+            settingsButton.Enabled = !closing;
             scriptList.Enabled = valeur && python;
             folderButton.Enabled = valeur && python;
             firmwareBox.Enabled = valeur;
