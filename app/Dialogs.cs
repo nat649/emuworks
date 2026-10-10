@@ -30,6 +30,7 @@ internal sealed class FirmwareImportDialog : Form
     public string InternalPath => inside.Text;
     public string ExternalPath => outside.Text;
     public FirmwareInfo Information => new() { Name = name.Text.Trim(), Version = string.IsNullOrWhiteSpace(version.Text) ? "Unknown" : version.Text.Trim(), ImportedAt = DateTime.UtcNow };
+    private string extractedDirectory;
     public FirmwareImportDialog()
     {
         Text = "Import N0110 firmware"; ClientSize = new(600, 460); MinimumSize = new(550, 480); Font = new("Segoe UI", 10); BackColor = Color.White;
@@ -40,7 +41,7 @@ internal sealed class FirmwareImportDialog : Form
         for (int i = 1; i <= 6; i++) grid.RowStyles.Add(new(SizeType.Absolute, i % 2 == 1 ? 25 : 42));
         grid.RowStyles.Add(new(SizeType.Percent, 100)); grid.RowStyles.Add(new(SizeType.Absolute, 48));
         var explanation = new Label { Text = "Choose internal and external binary images from the same N0110 build. They will be checked, saved in your library and installed together.", Dock = DockStyle.Fill };
-        grid.Controls.Add(explanation, 0, 0); grid.SetColumnSpan(explanation, 2);
+        grid.Controls.Add(explanation, 0, 0); grid.Controls.Add(MainForm.ActionButton("Open DFU", (_, _) => BrowseDfu()), 1, 0);
         grid.Controls.Add(new Label { Text = "1 · Internal flash image", AutoSize = true }, 0, 1);
         grid.Controls.Add(inside, 0, 2); grid.Controls.Add(MainForm.ActionButton("Browse", (_, _) => Browse(true)), 1, 2);
         grid.Controls.Add(new Label { Text = "2 · External flash image", AutoSize = true }, 0, 3);
@@ -51,6 +52,35 @@ internal sealed class FirmwareImportDialog : Form
         install = MainForm.ActionButton("Import and install", (_, _) => DialogResult = DialogResult.OK, true); install.Enabled = false;
         grid.Controls.Add(install, 0, 8); grid.Controls.Add(MainForm.ActionButton("Cancel", (_, _) => DialogResult = DialogResult.Cancel), 1, 8);
         name.TextChanged += (_, _) => ValidatePair(); inside.TextChanged += (_, _) => ValidatePair(); outside.TextChanged += (_, _) => ValidatePair(); Controls.Add(grid);
+    }
+    void BrowseDfu()
+    {
+        using var choose = new OpenFileDialog { Filter = "DfuSe firmware (*.dfu)|*.dfu", Title = "Choose a complete N0110 DfuSe firmware" };
+        if (choose.ShowDialog(this) != DialogResult.OK) return;
+        string stage = Path.Combine(Path.GetTempPath(), "EmuWorksDfu-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            DfuFirmware.Extract(choose.FileName, stage);
+            if (extractedDirectory != null) Directory.Delete(extractedDirectory, true);
+            extractedDirectory = stage;
+            inside.Text = Path.Combine(stage, "internal.bin"); outside.Text = Path.Combine(stage, "external.bin");
+            name.Text = Path.GetFileNameWithoutExtension(choose.FileName); ValidatePair();
+        }
+        catch (Exception ex)
+        {
+            if (Directory.Exists(stage)) Directory.Delete(stage, true);
+            MessageBox.Show(this, ex.Message, "DFU import", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && extractedDirectory != null)
+        {
+            try { Directory.Delete(extractedDirectory, true); }
+            catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex); }
+            extractedDirectory = null;
+        }
+        base.Dispose(disposing);
     }
     void Browse(bool internalImage)
     {

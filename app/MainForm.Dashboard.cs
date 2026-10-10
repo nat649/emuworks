@@ -32,7 +32,7 @@ public partial class MainForm
         importButton = ActionButton("Import firmware", OnImportFirmware, true);
         settingsButton = ActionButton("Settings", (_, _) => EditSettings());
         updatesButton = ActionButton("Updates", async (_, _) => await CheckUpdates(true));
-        actions.Controls.AddRange(new Control[] { importButton, settingsButton, updatesButton }); header.Controls.Add(actions, 1, 0);
+        actions.Controls.AddRange(new Control[] { importButton, settingsButton, updatesButton, ActionButton("Compare", (_, _) => OpenComparison()) }); header.Controls.Add(actions, 1, 0);
         var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
         body.ColumnStyles.Add(new(SizeType.Absolute, 338)); body.ColumnStyles.Add(new(SizeType.Percent, 100));
         var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 9), Margin = new Padding(0, 0, 16, 0) };
@@ -78,10 +78,31 @@ public partial class MainForm
             Font = new Font("Consolas", 9), BackColor = Color.FromArgb(247, 249, 253), TabStop = false };
         journal.Controls.Add(logBox); tabs.TabPages.AddRange(new[] { library, scripts, journal });
         body.Controls.Add(tabs, 0, 0);
-        ecran = new EcranPanel { Dock = DockStyle.Fill, Margin = new Padding(0) }; body.Controls.Add(ecran, 1, 0);
+        var calculatorArea = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Margin = Padding.Empty };
+        calculatorArea.RowStyles.Add(new(SizeType.Percent, 55)); calculatorArea.RowStyles.Add(new(SizeType.Percent, 45));
+        ecran = new EcranPanel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        calculatorArea.Controls.Add(ecran, 0, 0);
+        var tools = (TabControl)BuildCalculatorTools();
+        calculatorArea.Controls.Add(tools, 0, 1); body.Controls.Add(calculatorArea, 1, 0);
+        var showTools = new CheckBox { Text = "Show keyboard and tools", Checked = true, AutoSize = true, Margin = new(0, 12, 0, 0) };
+        showTools.CheckedChanged += (_, _) =>
+        {
+            tools.Visible = showTools.Checked;
+            calculatorArea.RowStyles[0].Height = showTools.Checked ? 55 : 100;
+            calculatorArea.RowStyles[1].Height = showTools.Checked ? 45 : 0;
+        };
+        libraryContent.Controls.Add(showTools);
+        if (comparisonPane)
+        {
+            root.RowStyles[0].Height = 0; header.Visible = false;
+            body.ColumnStyles[0].Width = 0; tabs.Visible = false;
+            var comparisonLog = new TabPage("Journal"); comparisonLog.Controls.Add(logBox); tools.TabPages.Add(comparisonLog);
+            ClientSize = new(680, 780); MinimumSize = Size.Empty;
+        }
         var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Padding = new Padding(0, 10, 0, 0) };
         footer.ColumnStyles.Add(new(SizeType.Absolute, 250)); footer.ColumnStyles.Add(new(SizeType.Percent, 100)); footer.ColumnStyles.Add(new(SizeType.AutoSize));
         startButton = ActionButton("Start calculator", OnStartStop, true); startButton.Width = 230; footer.Controls.Add(startButton, 0, 0);
+        if (comparisonPane) { startButton.Visible = false; footer.ColumnStyles[0].Width = 0; }
         statusLabel = new Label { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.FromArgb(95, 105, 125), AutoEllipsis = true }; footer.Controls.Add(statusLabel, 1, 0);
         footer.Controls.Add(new Label { Text = "EmuWorks " + UpdateService.Current.ToString(3), AutoSize = true, ForeColor = Color.Gray, Margin = new Padding(8, 12, 0, 0) }, 2, 0);
         root.Controls.Add(header, 0, 0); root.Controls.Add(body, 0, 1); root.Controls.Add(footer, 0, 2); Controls.Add(root);
@@ -112,7 +133,14 @@ public partial class MainForm
         }
         catch (Exception ex) { Log("Firmware information: " + ex.Message); }
     }
-    private void ApplySettings() { ecran.Zoom = settings.Zoom; ecran.Invalidate(); }
+    private void ApplySettings()
+    {
+        ecran.Zoom = settings.Zoom; ecran.Invalidate();
+        syncingBattery = true;
+        try { batteryVoltage.Value = settings.BatteryMillivolts; UpdateBatteryLabel(); }
+        finally { syncingBattery = false; }
+        ApplyBattery();
+    }
     private bool editingSettings;
     private void EditSettings()
     {
@@ -122,10 +150,14 @@ public partial class MainForm
         {
             // Release all held keys before giving the dialog keyboard focus.
             foreach (var key in touchesEnfoncees.ToList()) Relacher(key);
+            foreach (var key in virtualModifiers) Commande("keyboard ReleaseKey \"" + key + "\"");
+            virtualModifiers.Clear();
+            UpdateVirtualModifiers();
             using var dialog = new SettingsDialog(settings, Touches);
             if (dialog.ShowDialog(this) != DialogResult.OK) return;
             // A running session already owns the exclusive ROM lease.
             using var lease = sessionLease == null ? AcquireLease() : null;
+            dialog.Value.BatteryMillivolts = settings.BatteryMillivolts;
             dialog.Value.Save(baseDir);
             settings = dialog.Value;
             ApplySettings();

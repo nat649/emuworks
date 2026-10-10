@@ -66,4 +66,5 @@ releases/
 
 # Local application preferences and independent script rollback data
 /settings.json
+comparisons/
 rom/.code-scripts-*/

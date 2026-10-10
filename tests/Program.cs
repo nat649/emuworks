@@ -16,6 +16,16 @@ internal static partial class Tests
     [STAThread]
     static void Main(string[] args)
     {
+        if (args.Length == 4 && args[0] == "--dfu-check")
+        {
+            var images = DfuFirmware.Parse(File.ReadAllBytes(args[1]));
+            Check(images.Internal.SequenceEqual(File.ReadAllBytes(args[2])) && images.External.SequenceEqual(File.ReadAllBytes(args[3])), "DFU differs from independently extracted firmware images");
+            Console.WriteLine("PASS real official Epsilon DfuSe matches both original binaries"); return;
+        }
+        if (args.Length == 4 && args[0] == "--real-tools")
+        {
+            RealToolsTests(args[1], args[2], args[3]); return;
+        }
         if (args.Contains("--updates-only"))
         {
             var latest = UpdateService.Latest().GetAwaiter().GetResult();
@@ -27,7 +37,11 @@ internal static partial class Tests
             string output = args[^1]; Directory.CreateDirectory(output);
             using var import = new FirmwareImportDialog();
             using var preferences = new SettingsDialog(new(), new() { [Keys.Enter] = "EXE", [Keys.F2] = "HOME" });
-            foreach (var preview in new[] { (Form: (Form)import, Name: "import.png"), (Form: (Form)preferences, Name: "settings.png") })
+            string previewRoot = Path.Combine(Path.GetTempPath(), "EmuWorksPreview-" + Guid.NewGuid().ToString("N"));
+            using var dashboard = new MainForm(previewRoot, "C:/NumWorks");
+            using var developer = new DeveloperDialog(dashboard);
+            using var comparison = new ComparisonForm(previewRoot, "C:/NumWorks");
+            foreach (var preview in new[] { (Form: (Form)import, Name: "import.png"), (Form: (Form)preferences, Name: "settings.png"), (Form: (Form)dashboard, Name: "dashboard.png"), (Form: (Form)developer, Name: "developer.png"), (Form: (Form)comparison, Name: "comparison.png") })
             {
                 preview.Form.ShowInTaskbar = false; preview.Form.Opacity = 0; preview.Form.Show(); Application.DoEvents();
                 using var bitmap = new Bitmap(preview.Form.Width, preview.Form.Height);
@@ -55,6 +69,8 @@ internal static partial class Tests
             MakeFirmware(rom, 0x08000009);
             string repo = Path.GetFullPath(args[0]);
             foreach (string name in new[] { "rom.js", "storage.js" }) File.Copy(Path.Combine(repo, "renode", "tools", name), Path.Combine(tools, name));
+            foreach (string script in new[] { "numworks-native.resc", "emuworks-core.resc", "emuworks-code.resc" })
+                File.Copy(Path.Combine(repo, "renode", script), Path.Combine(root, "renode", script));
             Environment.SetEnvironmentVariable("EMUWORKS_BASE", root);
             Environment.SetEnvironmentVariable("RENODE_EXE", Environment.ProcessPath);
             ApplicationConfiguration.Initialize();
@@ -166,6 +182,59 @@ internal static partial class Tests
                         }
                         finally { Environment.SetEnvironmentVariable("EMUWORKS_TEST_COMMANDS", null); typeof(MainForm).GetField("settings", Hidden).SetValue(form, new AppSettings()); }
                     });
+                    await Case("virtual keys, developer commands and battery control", async () =>
+                    {
+                        string commands = Path.Combine(root, "hardware-tools.log");
+                        Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "normal");
+                        Environment.SetEnvironmentVariable("EMUWORKS_TEST_COMMANDS", commands);
+                        try
+                        {
+                            await Call(form, "Demarrer");
+                            form.VirtualKey("SEVEN"); form.VirtualKey("SHIFT"); form.VirtualKey("SHIFT");
+                            var voltage = (NumericUpDown)Field(form, "batteryVoltage"); voltage.Value = 3650;
+                            Check(AppSettings.Load(root).BatteryMillivolts == 3650, "Battery voltage not persisted");
+                            Check(form.SendDeveloperCommand("cpu GetRegisters"), "Developer command rejected");
+                            Check(!form.SendDeveloperCommand("pause\nquit"), "Multiline developer input accepted");
+                            await Task.Delay(100); await Call(form, "Arreter");
+                            string sent = File.ReadAllText(commands);
+                            Check(sent.Contains("keyboard TapKey \"SEVEN\"") && sent.Contains("keyboard PressKey \"SHIFT\"") && sent.Contains("keyboard ReleaseKey \"SHIFT\""), "Virtual keys missing");
+                            Check(sent.Contains("adc SetMillivolts 3650") && sent.Contains("cpu GetRegisters"), "Developer or ADC command missing");
+                            string boot = File.ReadAllText(Path.Combine(rom, ".sessions", "numworks-native.resc"));
+                            Check(!boot.Contains("@../rom/") && boot.Contains("lcd Serve " + testPort), "Startup paths or screen port not isolated");
+                        }
+                        finally { Environment.SetEnvironmentVariable("EMUWORKS_TEST_COMMANDS", null); }
+                    });
+                    await Case("two comparison calculators run independently and close cleanly", async () =>
+                    {
+                        Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "normal");
+                        using var comparison = new ComparisonForm(root, root) { ShowInTaskbar = false, Opacity = 0 };
+                        comparison.Show();
+                        try
+                        {
+                            await (Task)typeof(ComparisonForm).GetMethod("StartBoth", Hidden).Invoke(comparison, null);
+                            var left = (MainForm)typeof(ComparisonForm).GetField("left", Hidden).GetValue(comparison);
+                            var right = (MainForm)typeof(ComparisonForm).GetField("right", Hidden).GetValue(comparison);
+                            Check(left.IsRunning && right.IsRunning, "Both comparison calculators must start");
+                            Check(left.DataDirectory != right.DataDirectory && left.DataDirectory != root, "Comparison shared active ROM");
+                            Check((int)Field(left, "PortEcran") != (int)Field(right, "PortEcran"), "Comparison reused a screen port");
+                            await left.StopCalculator(); Check(right.IsRunning, "Stopping left stopped right");
+                            await comparison.StopAndClose(); Check(!right.IsRunning && Field(right, "renode") == null, "Comparison leaked a process");
+                        }
+                        finally { if (!comparison.IsDisposed) await comparison.StopAndClose(); }
+                    });
+                    await Case("closing comparison cancels both startups", async () =>
+                    {
+                        Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "silent");
+                        using var comparison = new ComparisonForm(root, root) { ShowInTaskbar = false, Opacity = 0 };
+                        comparison.Show();
+                        var left = (MainForm)typeof(ComparisonForm).GetField("left", Hidden).GetValue(comparison);
+                        var right = (MainForm)typeof(ComparisonForm).GetField("right", Hidden).GetValue(comparison);
+                        var start = (Task)typeof(ComparisonForm).GetMethod("StartBoth", Hidden).Invoke(comparison, null);
+                        await Task.Delay(300);
+                        await comparison.StopAndClose().WaitAsync(TimeSpan.FromSeconds(15));
+                        await start;
+                        Check(!left.HasProcess && !right.HasProcess, "Comparison startup leaked a process");
+                    });
                     await Case("fermeture socket detectee et retour a l'arret", async () =>
                     {
                         Environment.SetEnvironmentVariable("EMUWORKS_TEST_MODE", "drop");
@@ -269,6 +338,7 @@ internal static partial class Tests
     static void FirmwareTests()
     {
         NativeStorageTests();
+        FirmwareToolsTests();
         string fresh = Path.Combine(root, "fresh");
         CoreFirmware.PrepareLibrary(fresh);
         string freshRom = Path.Combine(fresh, "rom");

@@ -5,12 +5,13 @@ namespace EmuWorks;
 internal sealed class AppSettings
 {
     public int Zoom { get; set; }
+    public int BatteryMillivolts { get; set; } = 4050;
     public Dictionary<string, string> KeyBindings { get; set; } = new();
     public bool CustomKeyboard { get; set; }
     public bool CheckUpdatesOnLaunch { get; set; }
     public void Validate()
     {
-        if (Zoom < 0 || Zoom > 4 || KeyBindings == null) throw new IOException("Invalid application settings.");
+        if (Zoom < 0 || Zoom > 4 || BatteryMillivolts < 3000 || BatteryMillivolts > 4300 || KeyBindings == null) throw new IOException("Invalid application settings.");
         foreach (var binding in KeyBindings)
         {
             if (!Enum.TryParse<Keys>(binding.Key, out var key) || (key & Keys.KeyCode) == Keys.None

@@ -6,8 +6,17 @@ All in a single window: Renode is launched headlessly, and its screen is forward
 
 ## Windows download
 
-Download the Windows x64 archive from [Releases](https://github.com/nat649/emuworks/releases). It includes the .NET runtime and both built-in firmwares. Install Renode separately. **The current 0.2.0 development build uses native script storage and does not need Node.js. Published 0.1.x archives still require Node.js for external firmware.** Extract the complete archive to a writable path without spaces, and launch `EmuWorks.exe`. See [Windows release instructions](docs/windows-release.md).
+Download the Windows x64 archive from [Releases](https://github.com/nat649/emuworks/releases). It includes the .NET runtime and both built-in firmwares. Install Renode separately. **The published 0.2.0 release and current source use native script storage and do not need Node.js. Published 0.1.x archives still require Node.js for external firmware.** Extract the complete archive to a writable path without spaces, and launch `EmuWorks.exe`. See [Windows release instructions](docs/windows-release.md).
 
+## Calculator tools in the 0.3.0 source build
+
+- **Keyboard:** virtual calculator keys, with toggled Shift/Alpha modifiers and text-compatible input for Code.
+- **Developer:** Renode console, CPU register values, memory reads/dumps and an optional GDB server.
+- **Compare:** two independent calculators side by side, using separate ROMs, scripts, screen ports and Renode histories.
+- **Battery:** adjustable ADC voltage, presets and persistence across boots.
+- **Import firmware → Open DFU:** validated extraction of a complete N0110 DfuSe firmware pair.
+
+See [calculator tools](docs/calculator-tools.md) for usage, supported formats and limits. These additions require the current source build; the published 0.2.0 archive does not contain them. Third-party firmware remains user-supplied.
 ## Built-in firmware: EmuWorks Core
 
 **EmuWorks Core 0.1** is our original MIT-licensed ARM firmware, included in the application. It provides basic arithmetic, decimals, parentheses, integer powers, `ANS` and an eight-entry session history. It runs on the emulated Cortex-M7, using the LCD bus and GPIO keyboard. Its source code and original glyphs are maintained in the separate [emuworks-core repository](https://github.com/nat649/emuworks-core). This emulator keeps the compiled firmware, its MIT license and the exact source revision in [firmware/core](firmware/core/README.md).

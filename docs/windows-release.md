@@ -1,6 +1,6 @@
 # Windows setup
 
-These instructions describe the current **0.2.0 development build**. Published 0.1.x releases still require Node.js for external firmware.
+These instructions cover native script storage introduced in **0.2.0**. The current **0.3.0 source build** also includes virtual keys, developer tools, firmware comparison, simulated battery voltage and DFU import; see [calculator tools](calculator-tools.md). Published 0.1.x releases still require Node.js for external firmware.
 
 1. Install Renode 1.16 (`winget install Renode.Renode`).
 2. Extract the complete application package to a writable path without spaces, such as `C:\EmuWorks`.

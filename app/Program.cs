@@ -252,7 +252,7 @@ namespace EmuWorks
 
     public partial class MainForm : Form
     {
-        private readonly int PortEcran = 3555;
+        private int PortEcran = 3555;
         private const int PeriodeImageMs = 33;      // ~30 images par seconde
         private const int DelaiArretMs = 8000;      // avant de terminer Renode de force
 
@@ -301,12 +301,14 @@ namespace EmuWorks
         }
 
         private readonly string baseDir;
+        private readonly string assetRoot;
+        private readonly bool comparisonPane;
         private string RomDir => Path.Combine(baseDir, "rom");
         private bool CodeInstalled => CodeFirmware.IsCode(Path.Combine(RomDir, "internal.bin"));
         private bool codeSession;
         private string ScriptsDir => Path.Combine(RomDir, CodeInstalled ? "code-scripts" : "scripts");
         private string FirmwaresDir => Path.Combine(baseDir, "firmwares");
-        private string RenodeDir => Path.Combine(baseDir, "renode");
+        private string RenodeDir => Path.Combine(assetRoot, "renode");
         private string RomTool => Path.Combine(RenodeDir, "tools", "rom.js");
         private AppSettings settings = new();
         private Label firmwareDetails;
@@ -341,9 +343,11 @@ namespace EmuWorks
         private const int FrameTimeoutSeconds = 10;
         private readonly HashSet<string> touchesEnfoncees = new HashSet<string>();
 
-        public MainForm()
+        public MainForm(string dataRoot = null, string assets = null, bool compact = false)
         {
-            baseDir = ResolveBaseDir();
+            baseDir = dataRoot == null ? ResolveBaseDir() : Path.GetFullPath(dataRoot);
+            assetRoot = assets ?? baseDir; comparisonPane = compact;
+            if (compact) PortEcran = ReserveScreenPort();
             BuildUi();
             try { settings = AppSettings.Load(baseDir); ApplySettings(); }
             catch (Exception ex) { Log("Settings: " + ex.Message); }
@@ -661,7 +665,7 @@ namespace EmuWorks
             try
             {
                 if (closing || session != null) return;
-                if (baseDir.Contains(' ')) throw new IOException("Deplace EmuWorks vers un chemin sans espace.");
+                if (baseDir.Contains(' ') || assetRoot.Contains(' ')) throw new IOException("Deplace EmuWorks vers un chemin sans espace.");
                 if (!File.Exists(RenodeExe)) throw new IOException("Renode introuvable. Installe Renode ou renseigne RENODE_EXE.");
                 session = new CancellationTokenSource();
                 sessionLease = AcquireLease();
@@ -686,12 +690,13 @@ namespace EmuWorks
 
                 string bootScript = codeSession ? "emuworks-code.resc" : coreSession ? "emuworks-core.resc" : "numworks-native.resc";
                 var info = new ProcessStartInfo(RenodeExe,
-                    "--console --disable-xwt --hide-log -e \"i @" + bootScript + "\"")
+                    "--console --plain --disable-xwt --config \"" + PrepareRenodeConfig() + "\" -e \"i @" + PrepareBootScript(bootScript) + "\"")
                 {
                     WorkingDirectory = RenodeDir, UseShellExecute = false, CreateNoWindow = true,
                     RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
                 };
                 info.Environment["EMUWORKS_BASE"] = baseDir;
+                info.Environment["EMUWORKS_TEST_PORT"] = PortEcran.ToString();
                 info.Environment["EMUWORKS_SESSION_SRAM"] = sessionDump;
                 info.Environment["EMUWORKS_STORAGE_EXE"] = Environment.ProcessPath;
                 var process = new Process { StartInfo = info };
@@ -708,6 +713,7 @@ namespace EmuWorks
                 try { ecran.Afficher(first); }
                 finally { ArrayPool<byte>.Shared.Return(first); }
                 sessionReady = enMarche = started = true;
+                ApplyBattery();
                 startButton.Text = "Stop calculator";
                 imageTimer.Start();
                 fluxImages = BoucleImages(socket, token);
@@ -856,6 +862,8 @@ namespace EmuWorks
                     sessionReady = false;
                 }
                 touchesEnfoncees.Clear();
+                virtualModifiers.Clear();
+                UpdateVirtualModifiers();
                 ecran.Allume = false; ecran.Invalidate();
                 RefreshScripts(); RefreshFirmwares();
                 SetControlsEnabled(!remaining);
@@ -912,7 +920,7 @@ namespace EmuWorks
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            if (editingSettings) return base.ProcessCmdKey(ref msg, keyData);
+            if (editingSettings || batteryVoltage.ContainsFocus) return base.ProcessCmdKey(ref msg, keyData);
             if (enMarche && codeSession) {
                 Keys key = keyData & Keys.KeyCode;
                 if (key == Keys.Left || key == Keys.Right) return true;
@@ -940,7 +948,7 @@ namespace EmuWorks
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
-            if (editingSettings) { base.OnKeyDown(e); return; }
+            if (editingSettings || batteryVoltage.ContainsFocus) { base.OnKeyDown(e); return; }
             if (enMarche && codeSession) { base.OnKeyDown(e); return; }
             if (enMarche && Enfoncer(e.KeyCode))
             {
@@ -952,7 +960,7 @@ namespace EmuWorks
 
         protected override void OnKeyUp(KeyEventArgs e)
         {
-            if (editingSettings) { base.OnKeyUp(e); return; }
+            if (editingSettings || batteryVoltage.ContainsFocus) { base.OnKeyUp(e); return; }
             if (enMarche)
             {
                 string nom;
@@ -965,7 +973,7 @@ namespace EmuWorks
 
         protected override void OnKeyPress(KeyPressEventArgs e)
         {
-            if (editingSettings) { base.OnKeyPress(e); return; }
+            if (editingSettings || batteryVoltage.ContainsFocus) { base.OnKeyPress(e); return; }
             if (enMarche && codeSession) {
                 if (e.KeyChar <= 127) SendCodeChar(e.KeyChar);
                 e.Handled = true; return;
@@ -1069,11 +1077,13 @@ namespace EmuWorks
             if (InvokeRequired) { Post(() => Log(message)); return; }
             if (logBox.Lines.Length > 500) logBox.Clear();
             logBox.AppendText(message + Environment.NewLine);
+            developerWindow?.Append(message);
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             imageTimer.Dispose();
+            developerWindow?.Dispose();
             base.OnFormClosed(e);
         }
 
@@ -1084,8 +1094,9 @@ namespace EmuWorks
             e.Cancel = true;
             if (closing) return;
             closing = true;
+            if (comparisonWindow != null && !comparisonWindow.IsDisposed) await comparisonWindow.StopAndClose();
             await Arreter();
-            if (renode != null) { closing = false; return; }
+            if (renode != null || comparisonWindow?.HasProcesses == true) { closing = false; return; }
             closeAllowed = true;
             Close();
         }
