@@ -4,6 +4,10 @@
 
 All in a single window: Renode is launched headlessly, and its screen is forwarded to the application via a local socket.
 
+## Windows download
+
+Download the Windows x64 archive from [Releases](https://github.com/nat649/emuworks/releases). It includes the .NET runtime and both built-in firmwares. Install Renode separately, extract the complete archive to a writable path without spaces, and launch `EmuWorks.exe`. See [Windows release instructions](docs/windows-release.md).
+
 ## Built-in firmware: EmuWorks Core
 
 **EmuWorks Core 0.1** is our original MIT-licensed ARM firmware, included in the application. It provides basic arithmetic, decimals, parentheses, integer powers, `ANS` and an eight-entry session history. It runs on the emulated Cortex-M7, using the LCD bus and GPIO keyboard. Its source code and original glyphs are maintained in the separate [emuworks-core repository](https://github.com/nat649/emuworks-core). This emulator keeps the compiled firmware, its MIT license and the exact source revision in [firmware/core](firmware/core/README.md).

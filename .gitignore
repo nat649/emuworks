@@ -60,3 +60,6 @@ emb*.txt
 !firmware/code/bundled/internal.bin
 !firmware/code/bundled/external.bin
 rom/code-scripts/
+
+# Local release archives and build output
+releases/
