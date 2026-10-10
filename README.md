@@ -6,11 +6,17 @@ All in a single window: Renode is launched headlessly, and its screen is forward
 
 ## Built-in firmware: EmuWorks Core
 
-**EmuWorks Core 0.1** is our original MIT-licensed ARM firmware, included in the application. It provides basic arithmetic, decimals, parentheses, integer powers, `ANS` and an eight-entry session history. It runs on the emulated Cortex-M7, using the LCD bus and GPIO keyboard. Its code and hand-drawn bitmap glyphs are in [firmware/core](firmware/core/README.md).
+**EmuWorks Core 0.1** is our original MIT-licensed ARM firmware, included in the application. It provides basic arithmetic, decimals, parentheses, integer powers, `ANS` and an eight-entry session history. It runs on the emulated Cortex-M7, using the LCD bus and GPIO keyboard. Its source code and original glyphs are maintained in the separate [emuworks-core repository](https://github.com/nat649/emuworks-core). This emulator keeps the compiled firmware, its MIT license and the exact source revision in [firmware/core](firmware/core/README.md).
 
 Choose **emuworks-core-0.1 → Installer → Demarrer**. Core is installed automatically on a fresh installation; existing user firmware is preserved. This first version displays six significant digits and does not include Python, graphing or persistent history. No Epsilon/Omega code or assets are included in Core.
 
 **Third-party firmware is not bundled.** To use Epsilon or Omega, supply your own matching internal/external images. The workflow `renode/build-firmware-n0110.yml` can compile Epsilon from its sources. Third-party firmware retains its own license; the project's MIT license does not relicense it.
+
+## Updating the bundled Core firmware
+
+Core remains embedded in `EmuWorks.exe`: users do not need to download or clone the firmware repository. Building the Windows app also works without an ARM compiler or a Git submodule.
+
+To develop Core, clone [emuworks-core](https://github.com/nat649/emuworks-core) separately. Build and commit its images there, then run `node tools/update-core.cjs ../emuworks-core` from this repository and rebuild the application. The import records the source commit and SHA-256 hashes in `firmware/core/source.json`. See the [integration instructions](firmware/core/README.md).
 
 ## Prerequisites
 

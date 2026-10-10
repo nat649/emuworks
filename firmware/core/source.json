@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/nat649/emuworks-core",
+  "revision": "b4745bb07dc34c35cd46103eb4b8ede56c915239",
+  "license": "MIT",
+  "sha256": {
+    "internal.bin": "0046de14e7595e9c3382ad896770b2c6bd2c88c1528e2b8da4a685d3545de74f",
+    "external.bin": "fb1e4e09e7a495724910ac5b4e2c5725dc439c6e1bf26f1178ca08d7c2d51eed"
+  }
+}

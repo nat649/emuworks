@@ -2,7 +2,9 @@
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const { execFileSync, spawn } = require('node:child_process');
 const assert = require('node:assert/strict');
-const root = path.join(__dirname, '..'), build = path.join(root, 'firmware/core/build');
+const root = path.join(__dirname, '..');
+const core = path.resolve(process.argv[3] || path.join(root, '../emuworks-core'));
+const build = path.join(core, 'build');
 const renode = process.argv[2];
 const nm = path.join(process.env.ARM_GCC_BIN || '', 'arm-none-eabi-nm' + (process.platform === 'win32' ? '.exe' : ''));
 function symbols(file) {
